@@ -66,19 +66,16 @@ func generateNewID(name string) string {
 }
 
 func (pod *Pod) Run() (*RunningPod, error) {
-	// create a task from the container
 	task, err := (*pod.container).NewTask(*pod.ctx, cio.NewCreator(cio.WithStdio))
 	if err != nil {
 		return nil, err
 	}
 
-	// make sure we wait before calling start
 	exitStatusC, err := task.Wait(*pod.ctx)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	// call start on the task to execute the redis server
 	if err := task.Start(*pod.ctx); err != nil {
 		return nil, err
 	}
@@ -91,12 +88,10 @@ func (pod *Pod) Run() (*RunningPod, error) {
 }
 
 func (pod *RunningPod) Kill() (uint32, error) {
-	// kill the process and get the exit status
 	if err := (*pod.task).Kill(*pod.Pod.ctx, syscall.SIGTERM); err != nil {
 		return 0, err
 	}
 
-	// wait for the process to fully exit and print out the exit status
 	status := <-pod.exitStatusC
 	code, _, err := status.Result()
 	if err != nil {
