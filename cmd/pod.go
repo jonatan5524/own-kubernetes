@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/jonatan5524/own-kubernetes/pkg/pod"
 	"github.com/spf13/cobra"
@@ -29,28 +28,10 @@ var createCmd = &cobra.Command{
 		fmt.Printf("pod created: %s\n", pod.Id)
 		fmt.Printf("starting pod\n")
 
-		runningPod, err := pod.Run()
+		_, err = pod.Run()
 		if err != nil {
 			return err
 		}
-
-		fmt.Printf("pod started: %s\n", pod.Id)
-
-		time.Sleep(3 * time.Second)
-
-		fmt.Printf("killing pod\n")
-
-		code, err := runningPod.Kill()
-		if err != nil {
-			return err
-		}
-		fmt.Printf("pod killed: %s\n", pod.Id)
-
-		fmt.Printf("%s exited with status: %d\n", runningPod.Pod.Id, code)
-
-		pod.Delete()
-
-		fmt.Printf("container deleted: %s\n", pod.Id)
 
 		return nil
 	},
@@ -73,6 +54,21 @@ var listCmd = &cobra.Command{
 	},
 }
 
+var killCmd = &cobra.Command{
+	Use:   "kill",
+	Short: "kill existing pod",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := pod.KillPod(name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(id)
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(podCmd)
 	podCmd.AddCommand(listCmd)
@@ -81,4 +77,8 @@ func init() {
 	createCmd.Flags().StringVar(&imageRegistry, "registry", "", "image registry to pull (required)")
 	createCmd.MarkFlagRequired("registry")
 	createCmd.Flags().StringVar(&name, "name", "nameless", "the pod name")
+
+	podCmd.AddCommand(killCmd)
+	killCmd.Flags().StringVar(&name, "id", "", "the pod id (required)")
+	killCmd.MarkFlagRequired("id")
 }
