@@ -29,7 +29,7 @@ var createCmd = &cobra.Command{
 		fmt.Printf("pod created: %s\n", pod.Id)
 		fmt.Printf("starting pod\n")
 
-		_, err = pod.Run()
+		runningPod, err := pod.Run()
 		if err != nil {
 			return err
 		}
