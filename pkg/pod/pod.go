@@ -107,3 +107,29 @@ func (pod *Pod) Delete() {
 	(*pod.container).Delete(*pod.ctx, containerd.WithSnapshotCleanup)
 	pod.client.Close()
 }
+
+func ListRunningPods() ([]string, error) {
+	runningPods := []string{}
+
+	client, err := containerd.New("/run/containerd/containerd.sock")
+	if err != nil {
+		return runningPods, err
+	}
+
+	ctx := namespaces.WithNamespace(context.Background(), "own-kubernetes")
+
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		return runningPods, err
+	}
+
+	for _, container := range containers {
+		_, err = container.Task(ctx, cio.Load)
+
+		if err == nil {
+			runningPods = append(runningPods, container.ID())
+		}
+	}
+
+	return runningPods, nil
+}

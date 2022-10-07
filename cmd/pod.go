@@ -29,7 +29,7 @@ var createCmd = &cobra.Command{
 		fmt.Printf("pod created: %s\n", pod.Id)
 		fmt.Printf("starting pod\n")
 
-		runningPod, err := pod.Run()
+		_, err = pod.Run()
 		if err != nil {
 			return err
 		}
@@ -59,7 +59,18 @@ var createCmd = &cobra.Command{
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "lists existing pods",
-	// Run: ,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		runningPods, err := pod.ListRunningPods()
+		if err != nil {
+			return err
+		}
+
+		for _, pod := range runningPods {
+			fmt.Println(pod)
+		}
+
+		return nil
+	},
 }
 
 func init() {
