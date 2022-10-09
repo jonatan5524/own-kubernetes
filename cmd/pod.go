@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/jonatan5524/own-kubernetes/pkg/pod"
 	"github.com/spf13/cobra"
@@ -25,8 +26,8 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("pod created: %s\n", pod.Id)
-		fmt.Printf("starting pod\n")
+		log.Printf("pod created: %s\n", pod.Id)
+		log.Printf("starting pod\n")
 
 		_, err = pod.Run()
 		if err != nil {
@@ -46,6 +47,10 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
+		if len(runningPods) == 0 {
+			fmt.Println("There are no running pods")
+		}
+
 		for _, pod := range runningPods {
 			fmt.Println(pod)
 		}
@@ -63,7 +68,7 @@ var killCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println(id)
+		log.Println(id + " deleted")
 
 		return nil
 	},
