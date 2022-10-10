@@ -3,17 +3,14 @@ package pod
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"log"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/uuid"
-)
-
-const (
-	SOCKET_PATH = "/run/containerd/containerd.sock"
-	NAMESPACE   = "own-kubernetes"
 )
 
 func initContainerdConnection() (*containerd.Client, context.Context, error) {
@@ -27,13 +24,30 @@ func initContainerdConnection() (*containerd.Client, context.Context, error) {
 	return client, ctx, nil
 }
 
-func NewPod(registryImage string, name string) (*Pod, error) {
+func NewPodAndRun(imageRegistry string, name string) (string, error) {
+	pod, err := NewPod(imageRegistry, name)
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("pod created: %s\n", pod.Id)
+	log.Printf("starting pod\n")
+
+	_, err = pod.Run()
+	if err != nil {
+		return "", err
+	}
+
+	return pod.Id, nil
+}
+
+func NewPod(imageRegistry string, name string) (*Pod, error) {
 	client, ctx, err := initContainerdConnection()
 	if err != nil {
 		return nil, err
 	}
 
-	image, err := client.Pull(ctx, registryImage, containerd.WithPullUnpack)
+	image, err := client.Pull(ctx, imageRegistry, containerd.WithPullUnpack)
 	if err != nil {
 		return nil, err
 	}
@@ -89,13 +103,24 @@ func ListRunningPods() ([]string, error) {
 	return runningPods, nil
 }
 
-func KillPod(name string) (string, error) {
+func LogPod(id string) (string, error) {
+	logs, err := ioutil.ReadFile(fmt.Sprintf("%s/%s", LOGS_PATH, id))
+	log.Println(fmt.Sprintf("%s/%s", LOGS_PATH, id))
+
+	if err != nil {
+		return "", err
+	}
+
+	return string(logs), nil
+}
+
+func KillPod(id string) (string, error) {
 	client, ctx, err := initContainerdConnection()
 	if err != nil {
 		return "", err
 	}
 
-	container, err := client.LoadContainer(ctx, name)
+	container, err := client.LoadContainer(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +141,7 @@ func KillPod(name string) (string, error) {
 			client:    client,
 			ctx:       &ctx,
 			container: &container,
-			Id:        name,
+			Id:        id,
 		},
 		exitStatusC: exitStatusC,
 	}
@@ -128,5 +153,5 @@ func KillPod(name string) (string, error) {
 
 	runningPod.Pod.Delete()
 
-	return name, nil
+	return id, nil
 }

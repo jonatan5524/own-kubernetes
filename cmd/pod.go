@@ -19,18 +19,9 @@ var (
 )
 var createCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create new pod",
+	Short: "Create new pod and run",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pod, err := pod.NewPod(imageRegistry, name)
-		if err != nil {
-			return err
-		}
-
-		log.Printf("pod created: %s\n", pod.Id)
-		log.Printf("starting pod\n")
-
-		_, err = pod.Run()
-		if err != nil {
+		if _, err := pod.NewPodAndRun(imageRegistry, name); err != nil {
 			return err
 		}
 

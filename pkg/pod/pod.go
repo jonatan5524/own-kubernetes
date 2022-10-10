@@ -2,6 +2,7 @@ package pod
 
 import (
 	"context"
+	"fmt"
 	"syscall"
 
 	"github.com/containerd/containerd"
@@ -22,7 +23,7 @@ type RunningPod struct {
 }
 
 func (pod *Pod) Run() (*RunningPod, error) {
-	task, err := (*pod.container).NewTask(*pod.ctx, cio.NewCreator(cio.WithStdio))
+	task, err := (*pod.container).NewTask(*pod.ctx, cio.LogFile(fmt.Sprintf("%s/%s", LOGS_PATH, pod.Id)))
 	if err != nil {
 		return nil, err
 	}
