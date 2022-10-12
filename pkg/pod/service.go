@@ -10,7 +10,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
-	"github.com/google/uuid"
+	"github.com/jonatan5524/own-kubernetes/pkg"
 )
 
 func initContainerdConnection() (*containerd.Client, context.Context, error) {
@@ -52,7 +52,7 @@ func NewPod(imageRegistry string, name string) (*Pod, error) {
 		return nil, err
 	}
 
-	id := generateNewID(name)
+	id := pkg.GenerateNewID(name)
 
 	container, err := client.NewContainer(
 		ctx,
@@ -71,12 +71,6 @@ func NewPod(imageRegistry string, name string) (*Pod, error) {
 		ctx:       &ctx,
 		client:    client,
 	}, nil
-}
-
-func generateNewID(name string) string {
-	id := uuid.New()
-
-	return fmt.Sprintf("%s-%s", name, id)
 }
 
 func ListRunningPods() ([]string, error) {

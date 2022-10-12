@@ -14,14 +14,14 @@ var podCmd = &cobra.Command{
 }
 
 var (
-	imageRegistry string
-	name          string
+	podImageRegistry string
+	podName          string
 )
-var createCmd = &cobra.Command{
+var createPodCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create new pod and run",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if _, err := pod.NewPodAndRun(imageRegistry, name); err != nil {
+		if _, err := pod.NewPodAndRun(podImageRegistry, podName); err != nil {
 			return err
 		}
 
@@ -29,7 +29,7 @@ var createCmd = &cobra.Command{
 	},
 }
 
-var listCmd = &cobra.Command{
+var listPodCmd = &cobra.Command{
 	Use:   "list",
 	Short: "lists existing pods",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,11 +50,11 @@ var listCmd = &cobra.Command{
 	},
 }
 
-var killCmd = &cobra.Command{
+var killPodCmd = &cobra.Command{
 	Use:   "kill",
 	Short: "kill existing pod",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := pod.KillPod(name)
+		id, err := pod.KillPod(podName)
 		if err != nil {
 			return err
 		}
@@ -67,14 +67,14 @@ var killCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(podCmd)
-	podCmd.AddCommand(listCmd)
+	podCmd.AddCommand(listPodCmd)
 
-	podCmd.AddCommand(createCmd)
-	createCmd.Flags().StringVar(&imageRegistry, "registry", "", "image registry to pull (required)")
-	createCmd.MarkFlagRequired("registry")
-	createCmd.Flags().StringVar(&name, "name", "nameless", "the pod name")
+	podCmd.AddCommand(createPodCmd)
+	createPodCmd.Flags().StringVar(&podImageRegistry, "registry", "", "image registry to pull (required)")
+	createPodCmd.MarkFlagRequired("registry")
+	createPodCmd.Flags().StringVar(&podName, "name", "nameless", "the pod name")
 
-	podCmd.AddCommand(killCmd)
-	killCmd.Flags().StringVar(&name, "id", "", "the pod id (required)")
-	killCmd.MarkFlagRequired("id")
+	podCmd.AddCommand(killPodCmd)
+	killPodCmd.Flags().StringVar(&podName, "id", "", "the pod id (required)")
+	killPodCmd.MarkFlagRequired("id")
 }

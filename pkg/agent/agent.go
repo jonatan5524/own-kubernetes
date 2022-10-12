@@ -12,10 +12,10 @@ import (
 )
 
 func initRoutes(e *echo.Echo) {
-	e.POST("/pod", api.CreatePod)
-	e.GET("/pod/:id/log", api.LogPod)
-	e.GET("/pod", api.GetAllPods)
-	e.DELETE("/pod/:id", api.DeletePod)
+	e.POST("/pods", api.CreatePod)
+	e.GET("/pods/:id/log", api.LogPod)
+	e.GET("/pods", api.GetAllPods)
+	e.DELETE("/pods/:id", api.DeletePod)
 }
 
 func initMiddlewares(e *echo.Echo) {
