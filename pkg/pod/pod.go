@@ -18,7 +18,7 @@ type Pod struct {
 
 type RunningPod struct {
 	Pod         *Pod
-	task        *containerd.Task
+	Task        *containerd.Task
 	exitStatusC <-chan containerd.ExitStatus
 }
 
@@ -39,13 +39,13 @@ func (pod *Pod) Run() (*RunningPod, error) {
 
 	return &RunningPod{
 		Pod:         pod,
-		task:        &task,
+		Task:        &task,
 		exitStatusC: exitStatusC,
 	}, nil
 }
 
 func (pod *RunningPod) Kill() (uint32, error) {
-	if err := (*pod.task).Kill(*pod.Pod.ctx, syscall.SIGTERM); err != nil {
+	if err := (*pod.Task).Kill(*pod.Pod.ctx, syscall.SIGTERM); err != nil {
 		return 0, err
 	}
 
@@ -55,7 +55,7 @@ func (pod *RunningPod) Kill() (uint32, error) {
 		return 0, err
 	}
 
-	(*pod.task).Delete(*pod.Pod.ctx)
+	(*pod.Task).Delete(*pod.Pod.ctx)
 
 	return code, nil
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/jonatan5524/own-kubernetes/pkg"
@@ -19,6 +20,11 @@ type Node struct {
 }
 
 func NewNode(cli *client.Client, ctx context.Context) (*Node, error) {
+	err := createNetwork(cli, ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	exists, err := isNodeImageExists(cli, ctx)
 	if err != nil {
 		return nil, err
@@ -40,6 +46,7 @@ func NewNode(cli *client.Client, ctx context.Context) (*Node, error) {
 				},
 			},
 		},
+		NetworkMode: NODE_DOCKER_NETWORK_NAME,
 		Resources: container.Resources{
 			Memory:    MEMORY_LIMIT,
 			CPUShares: CPU_LIMIT,
@@ -47,12 +54,33 @@ func NewNode(cli *client.Client, ctx context.Context) (*Node, error) {
 		Privileged: true,
 	}
 
-	_, err = cli.ContainerCreate(ctx, config, hostConfig, nil, nil, id)
+	_, err = cli.ContainerCreate(ctx, config, hostConfig, &network.NetworkingConfig{}, nil, id)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Node{Id: id}, nil
+}
+
+func createNetwork(cli *client.Client, ctx context.Context) error {
+	_, err := cli.NetworkInspect(ctx, NODE_DOCKER_NETWORK_NAME, types.NetworkInspectOptions{})
+	if err == nil {
+		return nil
+	}
+
+	newNetwork := types.NetworkCreate{IPAM: &network.IPAM{
+		Driver: "default",
+		Config: []network.IPAMConfig{{
+			Subnet: NODE_CIDR,
+		}},
+	}}
+
+	_, err = cli.NetworkCreate(context.Background(), NODE_DOCKER_NETWORK_NAME, newNetwork)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func isNodeImageExists(cli *client.Client, ctx context.Context) (bool, error) {

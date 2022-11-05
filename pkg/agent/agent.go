@@ -3,9 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/exec"
 
+	"github.com/jonatan5524/own-kubernetes/pkg"
 	"github.com/jonatan5524/own-kubernetes/pkg/agent/api"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -31,13 +30,10 @@ func initMiddlewares(e *echo.Echo) {
 }
 
 func startContainerd() {
-	cmd := exec.Command("containerd")
-	cmd.Stdout = os.Stdout
-	err := cmd.Start()
-	if err != nil {
-		log.Fatal(err)
+	if err := pkg.ExecuteCommand("containerd"); err != nil {
+		panic(err)
 	}
-	log.Printf("containerd run on %d", cmd.Process.Pid)
+	log.Printf("containerd running\n")
 }
 
 func main() {

@@ -3,7 +3,7 @@ FROM ubuntu
 
 WORKDIR /agent
 
-RUN apt-get update && apt-get install -y wget containerd
+RUN apt-get update && apt-get install -y wget containerd iproute2 iptables iputils-ping
 
 COPY bin/agent .
 

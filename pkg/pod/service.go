@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"strings"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/jonatan5524/own-kubernetes/pkg"
+	"github.com/jonatan5524/own-kubernetes/pkg/net"
 )
 
 func initContainerdConnection() (*containerd.Client, context.Context, error) {
-	client, err := containerd.New(SOCKET_PATH)
+	client, err := containerd.New(SOCKET_PATH, containerd.WithDefaultNamespace(NAMESPACE))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -33,8 +35,13 @@ func NewPodAndRun(imageRegistry string, name string) (string, error) {
 	log.Printf("pod created: %s\n", pod.Id)
 	log.Printf("starting pod\n")
 
-	_, err = pod.Run()
+	runningPod, err := pod.Run()
 	if err != nil {
+		return "", err
+	}
+
+	log.Printf("setting up pod network\n")
+	if err := connectToNetwork(pod.Id, (*runningPod.Task).Pid()); err != nil {
 		return "", err
 	}
 
@@ -71,6 +78,58 @@ func NewPod(imageRegistry string, name string) (*Pod, error) {
 		ctx:       &ctx,
 		client:    client,
 	}, nil
+}
+
+func connectToNetwork(podId string, pid uint32) error {
+	netId := podId[:15-len("veth")-1]
+
+	podCIDR, err := generateNewNodePodCIDR()
+	if err != nil {
+		return err
+	}
+
+	// podCIDR: 10.0.2.0/24 -> bridgeIP: 10.0.2.1/24
+	bridgeIP := pkg.ReplaceAtIndex(podCIDR, '1', len(podCIDR)-4)
+
+	if !net.IsDeviceExists(BRIDGE_NAME) {
+		if err := net.CreateBridge(BRIDGE_NAME, bridgeIP); err != nil {
+			return err
+		}
+	}
+
+	if !net.IsDeviceExists(VXLAN_NAME) {
+		if err := net.CreateVXLAN(VXLAN_NAME, NODE_LOCAL_NETWORK_INTERFACE, BRIDGE_NAME); err != nil {
+			return err
+		}
+	}
+
+	podIP, err := net.GetNextAvailableIPAddr(podCIDR)
+	if err != nil {
+		return err
+	}
+
+	if err := net.CreateVethPairNamespaces(
+		fmt.Sprintf("veth-%s", netId),
+		fmt.Sprintf("ceth-%s", netId),
+		BRIDGE_NAME,
+		int(pid),
+		podIP+podCIDR[len(podCIDR)-3:],
+		bridgeIP,
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func generateNewNodePodCIDR() (string, error) {
+	localIPAddr, err := net.GetLocalIPAddr(NODE_LOCAL_NETWORK_INTERFACE)
+	if err != nil {
+		return "", err
+	}
+
+	// localIPAddr: 172.18.0.2 -> podCIDR: 10.0.2.0/24
+	return strings.ReplaceAll(POD_CIDR, "x", string(localIPAddr[len(localIPAddr)-4])), nil
 }
 
 func ListRunningPods() ([]string, error) {
@@ -130,7 +189,7 @@ func KillPod(id string) (string, error) {
 	}
 
 	runningPod := RunningPod{
-		task: &task,
+		Task: &task,
 		Pod: &Pod{
 			client:    client,
 			ctx:       &ctx,
