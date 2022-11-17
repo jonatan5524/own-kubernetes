@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -15,15 +16,26 @@ func GenerateNewID(name string) string {
 	return fmt.Sprintf("%s-%s", name, id)
 }
 
-func ExecuteCommand(command string) error {
-	cmd := exec.Command("bash", "-c", command)
+func ExecuteCommand(command string, waitToComplete bool) error {
+	log.Printf("Executing: %s", command)
+
+	splitedCommand := strings.Split(command, " ")
+	cmd := exec.Command(splitedCommand[0], splitedCommand[1:]...)
 	cmd.Stdout = os.Stdout
 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 
-	log.Printf("%s logs: %s", command, cmd.Stdout)
+	if waitToComplete {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("output: %s", cmd.Stdout)
+
+			return err
+		}
+	}
+
+	log.Printf("output: %s", cmd.Stdout)
 
 	return nil
 }

@@ -17,6 +17,7 @@ type Pod struct {
 }
 
 type RunningPod struct {
+	IPAddr      string
 	Pod         *Pod
 	Task        *containerd.Task
 	exitStatusC <-chan containerd.ExitStatus

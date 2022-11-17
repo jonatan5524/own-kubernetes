@@ -6,6 +6,7 @@ import (
 
 	"github.com/jonatan5524/own-kubernetes/pkg"
 	"github.com/jonatan5524/own-kubernetes/pkg/agent/api"
+	"github.com/jonatan5524/own-kubernetes/pkg/service"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -30,14 +31,22 @@ func initMiddlewares(e *echo.Echo) {
 }
 
 func startContainerd() {
-	if err := pkg.ExecuteCommand("containerd"); err != nil {
+	if err := pkg.ExecuteCommand("/usr/bin/containerd", false); err != nil {
 		panic(err)
 	}
+
 	log.Printf("containerd running\n")
+}
+
+func setupIPTablesServices() {
+	if err := service.InitKubeServicesChain(); err != nil {
+		panic(err)
+	}
 }
 
 func main() {
 	startContainerd()
+	setupIPTablesServices()
 
 	e := echo.New()
 

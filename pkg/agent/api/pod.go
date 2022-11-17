@@ -18,14 +18,14 @@ func CreatePod(c echo.Context) error {
 		return err
 	}
 
-	id, err := pod.NewPodAndRun(podDto.ImageRegistry, podDto.Name)
+	runningPod, err := pod.NewPodAndRun(podDto.ImageRegistry, podDto.Name)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusCreated, podDTO{
 		ImageRegistry: podDto.ImageRegistry,
-		Name:          id,
+		Name:          runningPod.Pod.Id,
 	})
 }
 

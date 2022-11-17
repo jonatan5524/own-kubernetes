@@ -26,10 +26,10 @@ func initContainerdConnection() (*containerd.Client, context.Context, error) {
 	return client, ctx, nil
 }
 
-func NewPodAndRun(imageRegistry string, name string) (string, error) {
+func NewPodAndRun(imageRegistry string, name string) (*RunningPod, error) {
 	pod, err := NewPod(imageRegistry, name)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	log.Printf("pod created: %s\n", pod.Id)
@@ -37,15 +37,18 @@ func NewPodAndRun(imageRegistry string, name string) (string, error) {
 
 	runningPod, err := pod.Run()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	log.Printf("setting up pod network\n")
-	if err := connectToNetwork(pod.Id, (*runningPod.Task).Pid()); err != nil {
-		return "", err
+	podIPAddr, err := connectToNetwork(pod.Id, (*runningPod.Task).Pid())
+	if err != nil {
+		return nil, err
 	}
 
-	return pod.Id, nil
+	runningPod.IPAddr = podIPAddr
+
+	return runningPod, nil
 }
 
 func NewPod(imageRegistry string, name string) (*Pod, error) {
@@ -80,12 +83,13 @@ func NewPod(imageRegistry string, name string) (*Pod, error) {
 	}, nil
 }
 
-func connectToNetwork(podId string, pid uint32) error {
-	netId := podId[:15-len("veth")-1]
+func connectToNetwork(podId string, pid uint32) (string, error) {
+	const MAX_DEVICE_NAME = 15
+	netId := podId[:MAX_DEVICE_NAME-len("veth")-1]
 
 	podCIDR, err := generateNewNodePodCIDR()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// podCIDR: 10.0.2.0/24 -> bridgeIP: 10.0.2.1/24
@@ -93,19 +97,19 @@ func connectToNetwork(podId string, pid uint32) error {
 
 	if !net.IsDeviceExists(BRIDGE_NAME) {
 		if err := net.CreateBridge(BRIDGE_NAME, bridgeIP); err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	if !net.IsDeviceExists(VXLAN_NAME) {
 		if err := net.CreateVXLAN(VXLAN_NAME, NODE_LOCAL_NETWORK_INTERFACE, BRIDGE_NAME); err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	podIP, err := net.GetNextAvailableIPAddr(podCIDR)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if err := net.CreateVethPairNamespaces(
@@ -114,12 +118,12 @@ func connectToNetwork(podId string, pid uint32) error {
 		BRIDGE_NAME,
 		int(pid),
 		podIP+podCIDR[len(podCIDR)-3:],
-		bridgeIP,
+		bridgeIP[:len(bridgeIP)-3],
 	); err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return podIP, nil
 }
 
 func generateNewNodePodCIDR() (string, error) {

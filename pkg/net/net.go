@@ -4,22 +4,20 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/jonatan5524/own-kubernetes/pkg"
 )
 
 func CreateBridge(name string, ipAddr string) error {
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link add %s type bridge", name)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link add %s type bridge", name), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip addr add %s dev %s", ipAddr, name)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip addr add %s dev %s", ipAddr, name), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link set %s up", name)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link set %s up", name), true); err != nil {
 		return err
 	}
 
@@ -27,31 +25,31 @@ func CreateBridge(name string, ipAddr string) error {
 }
 
 func CreateVethPairNamespaces(name string, pair string, bridge string, namespacePID int, ipAddr string, bridgeIpAddr string) error {
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link add %s type veth peer name %s", name, pair)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link add %s type veth peer name %s", name, pair), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link set %s up", name)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link set %s up", name), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link set %s netns /proc/%d/ns/net", pair, namespacePID)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link set %s netns /proc/%d/ns/net", pair, namespacePID), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("nsenter --net=/proc/%d/ns/net ip link set %s up", namespacePID, pair)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/bin/nsenter --net=/proc/%d/ns/net ip link set %s up", namespacePID, pair), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("nsenter --net=/proc/%d/ns/net ip addr add %s dev %s", namespacePID, ipAddr, pair)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/bin/nsenter --net=/proc/%d/ns/net /usr/sbin/ip addr add %s dev %s", namespacePID, ipAddr, pair), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link set %s master %s", name, bridge)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link set %s master %s", name, bridge), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("nsenter --net=/proc/%d/ns/net /usr/sbin/ip route add default via %s", namespacePID, bridgeIpAddr)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/bin/nsenter --net=/proc/%d/ns/net /usr/sbin/ip route add default via %s", namespacePID, bridgeIpAddr), true); err != nil {
 		return err
 	}
 
@@ -64,15 +62,15 @@ func CreateVXLAN(name string, nodeInterface string, bridgeName string) error {
 		GROUP = "239.1.1.1"
 	)
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link add %s type vxlan id %s group %s dstport 0 dev %s", name, ID, GROUP, nodeInterface)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link add %s type vxlan id %s group %s dstport 0 dev %s", name, ID, GROUP, nodeInterface), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link set %s master %s", name, bridgeName)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link set %s master %s", name, bridgeName), true); err != nil {
 		return err
 	}
 
-	if err := pkg.ExecuteCommand(fmt.Sprintf("ip link set %s up", name)); err != nil {
+	if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/sbin/ip link set %s up", name), true); err != nil {
 		return err
 	}
 
@@ -107,9 +105,7 @@ func GetNextAvailableIPAddr(cidr string) (string, error) {
 	}
 
 	for _, ip := range hosts {
-		out, _ := exec.Command("ping", "-c1", "-t1", ip).Output()
-
-		if strings.Contains(string(out), "Destination Host Unreachable") {
+		if err := pkg.ExecuteCommand(fmt.Sprintf("/usr/bin/ping -c1 -t1 %s", ip), true); err != nil {
 			return ip, nil
 		}
 	}
