@@ -5,8 +5,6 @@ import (
 	"log"
 	"net/http"
 	"time"
-
-	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
 )
 
 type KubeAPI interface {
@@ -15,10 +13,14 @@ type KubeAPI interface {
 	Stop()
 }
 
+type Rest interface {
+	Register()
+}
+
 type KubeAPIApp struct {
 	server        *http.Server
 	Host          string
-	restEndpoints []rest.Rest
+	restEndpoints []Rest
 	Port          int
 }
 
@@ -28,7 +30,7 @@ const (
 	defaultTimeout = 3 * time.Second
 )
 
-func NewKubeAPI(restEndpoints []rest.Rest) KubeAPI {
+func NewKubeAPI(restEndpoints []Rest) KubeAPI {
 	app := &KubeAPIApp{}
 
 	app.restEndpoints = restEndpoints
@@ -44,6 +46,8 @@ func NewKubeAPI(restEndpoints []rest.Rest) KubeAPI {
 }
 
 func (app *KubeAPIApp) Setup() {
+	log.Println("KubeApi setup")
+
 	for _, restEndpoint := range app.restEndpoints {
 		restEndpoint.Register()
 	}
@@ -51,6 +55,7 @@ func (app *KubeAPIApp) Setup() {
 
 func (app *KubeAPIApp) Run() {
 	log.Printf("Kube api listening on %s:%d", app.Host, app.Port)
+	
 	err := app.server.ListenAndServe()
 	if err != nil {
 		panic(err)

@@ -55,7 +55,7 @@ func PutResource(key string, value string) error {
 	defer cancel()
 
 	if err != nil {
-		log.Fatal("failed to put: ", err)
+		return fmt.Errorf("failed to put: %v", err)
 	}
 
 	return nil
@@ -73,8 +73,25 @@ func DeleteResource(key string) error {
 	defer cancel()
 
 	if err != nil {
-		log.Fatal("failed to delete: ", err)
+		return fmt.Errorf("failed to delete: %v", err)
 	}
 
 	return nil
+}
+
+func GetWatchChannel(key string) (clientv3.WatchChan, func(), error) {
+	cli, err := connect()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	watchChan := cli.Watch(context.Background(), key, clientv3.WithPrefix())
+
+	closeChan := func() {
+		log.Printf("closing watch channel %s", key)
+
+		cli.Close()
+	}
+
+	return watchChan, closeChan, nil
 }

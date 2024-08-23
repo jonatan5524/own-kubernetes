@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	app := kubeapi.NewKubeAPI([]rest.Rest{
+	app := kubeapi.NewKubeAPI([]kubeapi.Rest{
 		&rest.Pod{},
 	})
 
