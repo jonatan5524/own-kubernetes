@@ -1,2 +1,3 @@
 kind: Pod
-name: testPod
+name: testPod2
+version: 2

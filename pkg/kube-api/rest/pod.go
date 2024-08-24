@@ -28,6 +28,9 @@ func (pod *Pod) Register() {
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
+	ws.Route(ws.GET("/").To(pod.watcher).
+		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool")))
+
 	ws.Route(ws.GET("/{name}").To(pod.get).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
 
@@ -65,6 +68,51 @@ func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
 	err = resp.WriteEntity(podRes)
 	if err != nil {
 		log.Fatalf("err while sending response: %v", err)
+	}
+}
+
+func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
+	watchQuery := req.QueryParameter("watch")
+
+	if watchQuery != "true" {
+		return
+	}
+
+	log.Println("Client pod watcher started")
+
+	resp.Header().Set("Access-Control-Allow-Origin", "*")
+	resp.Header().Set("Content-Type", "text/event-stream")
+	resp.Header().Set("Cache-Control", "no-cache")
+	resp.Header().Set("Connection", "keep-alive")
+
+	watchChan, closeChanFunc, err := etcdService.GetWatchChannel(pkg.POD_ETCD_KEY)
+	if err != nil {
+		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
+		if err != nil {
+			log.Fatalf("err while sending error: %v", err)
+		}
+
+		return
+	}
+	defer closeChanFunc()
+	defer resp.CloseNotify()
+
+	for {
+		select {
+		case watchResp := <-watchChan:
+			if watchResp.Err() != nil {
+				log.Fatal("error watcher")
+			}
+
+			for _, event := range watchResp.Events {
+				fmt.Fprintf(resp, "%s executed on %q with value %q\n", event.Type, event.Kv.Key, event.Kv.Value)
+				resp.Flush()
+			}
+
+		case <-req.Request.Context().Done():
+			log.Println("Connection closed")
+			return
+		}
 	}
 }
 

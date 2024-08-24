@@ -55,7 +55,7 @@ func (app *KubeAPIApp) Setup() {
 
 func (app *KubeAPIApp) Run() {
 	log.Printf("Kube api listening on %s:%d", app.Host, app.Port)
-	
+
 	err := app.server.ListenAndServe()
 	if err != nil {
 		panic(err)
