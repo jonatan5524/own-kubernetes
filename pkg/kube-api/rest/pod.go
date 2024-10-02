@@ -8,13 +8,39 @@ import (
 
 	restful "github.com/emicklei/go-restful/v3"
 	"github.com/jonatan5524/own-kubernetes/pkg"
-	etcdService "github.com/jonatan5524/own-kubernetes/pkg/etcd"
+	etcdService "github.com/jonatan5524/own-kubernetes/pkg/kube-api/etcd"
 	kubeapi_logger "github.com/jonatan5524/own-kubernetes/pkg/kube-api/logger"
 )
 
 type Pod struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+	Kind string `json:"kind" yaml:"kind"`
+
+	Metadata struct {
+		Name      string `json:"name" yaml:"name"`
+		Namespace string `json:"namespace" yaml:"namespace"`
+		UID       string `json:"uid" yaml:"uid"`
+	} `json:"metadata" yaml:"metadata"`
+
+	Spec struct {
+		Containers []Container `json:"containers" yaml:"containers"`
+	} `json:"spec" yaml:"spec"`
+}
+
+type Container struct {
+	Name  string `json:"name" yaml:"name"`
+	Image string `json:"image" yaml:"image"`
+
+	Command []string `json:"command" yaml:"command"`
+	Args    []string `json:"args" yaml:"args"`
+
+	Ports []struct {
+		ContainerPort int `json:"containerPort" yaml:"containerPort"`
+	} `json:"ports" yaml:"ports"`
+
+	Env []struct {
+		Name  string `json:"name" yaml:"name"`
+		Value string `json:"value" yaml:"value"`
+	} `json:"env" yaml:"env"`
 }
 
 func (pod *Pod) Register() {
@@ -132,7 +158,7 @@ func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
 		panic(err)
 	}
 
-	err = etcdService.PutResource(fmt.Sprintf("%s/%s", pkg.POD_ETCD_KEY, newPod.Name), string(podBytes))
+	err = etcdService.PutResource(fmt.Sprintf("%s/%s", pkg.POD_ETCD_KEY, newPod.Metadata.Name), string(podBytes))
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {

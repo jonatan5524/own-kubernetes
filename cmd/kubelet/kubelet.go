@@ -6,6 +6,7 @@ import (
 
 func main() {
 	app := kubelet.NewKubelet()
+	defer app.Stop()
 
 	app.Setup()
 	app.Run()

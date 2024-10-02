@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 func connect() (*clientv3.Client, error) {

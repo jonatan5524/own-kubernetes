@@ -1,0 +1,20 @@
+kind: Pod
+metadata:
+  name: etcd
+  namespace: etcd
+spec:
+  containers:
+    - name: etcd
+      image: quay.io/coreos/etcd:v3.5.15
+      command: ["/usr/local/bin/etcd"]
+      args:
+        - "-advertise-client-urls"
+        - "http://0.0.0.0:2397,http://0.0.0.0:4001"
+        - "-listen-client-urls"
+        - "http://0.0.0.0:2379,http://0.0.0.0:4001"
+        - "-enable-grpc-gateway"
+        - "-enable-v2"
+        - "-log-level=debug"
+      ports:
+        - containerPort: 2379
+        - containerPort: 4001
