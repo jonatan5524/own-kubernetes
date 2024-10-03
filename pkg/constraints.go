@@ -1,5 +1,5 @@
 package pkg
 
 const (
-	POD_ETCD_KEY = "/pod"
+	PodEtcdKey = "/pod"
 )

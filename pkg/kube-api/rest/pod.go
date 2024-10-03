@@ -82,7 +82,7 @@ func (pod *Pod) Register() {
 
 func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
 	name := req.PathParameter("name")
-	res, err := etcdService.GetResource(fmt.Sprintf("%s/%s", pkg.POD_ETCD_KEY, name))
+	res, err := etcdService.GetResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, name))
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
@@ -122,7 +122,7 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 
-	watchChan, closeChanFunc, err := etcdService.GetWatchChannel(pkg.POD_ETCD_KEY)
+	watchChan, closeChanFunc, err := etcdService.GetWatchChannel(pkg.PodEtcdKey)
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
@@ -169,7 +169,7 @@ func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
 		panic(err)
 	}
 
-	err = etcdService.PutResource(fmt.Sprintf("%s/%s", pkg.POD_ETCD_KEY, newPod.Metadata.Name), string(podBytes))
+	err = etcdService.PutResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, newPod.Metadata.Name), string(podBytes))
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
@@ -188,7 +188,7 @@ func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
 func (pod *Pod) delete(req *restful.Request, resp *restful.Response) {
 	name := req.PathParameter("name")
 
-	err := etcdService.DeleteResource(fmt.Sprintf("%s/%s", pkg.POD_ETCD_KEY, name))
+	err := etcdService.DeleteResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, name))
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
