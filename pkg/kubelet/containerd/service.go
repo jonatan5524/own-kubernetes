@@ -9,47 +9,48 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
+	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	kubeapi_rest "github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
 )
 
 const (
-	containerdSocketPath      = "/run/containerd/containerd.sock"
-	defaultPodLoggingLocation = "/home/user/kubernetes/log/pod/"
+	containerdSocketPath = "/run/containerd/containerd.sock"
+	defaultNamespace     = "own-kube"
 )
 
-func containerdConnection(namespace string) (*containerd.Client, context.Context, error) {
+func containerdConnection() (*containerd.Client, context.Context, error) {
 	client, err := containerd.New(containerdSocketPath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	ctx := namespaces.WithNamespace(context.Background(), namespace)
+	ctx := namespaces.WithNamespace(context.Background(), defaultNamespace)
 
 	return client, ctx, nil
 }
 
-func CreateContainer(container *kubeapi_rest.Container, namespace string) error {
-	log.Printf("creating container %s in namespace %s with containerd", container.Name, namespace)
+func CreateContainer(container *kubeapi_rest.Container, logLocation string) (string, error) {
+	log.Printf("creating container %s with containerd", container.Name)
 
-	client, ctx, err := containerdConnection(namespace)
+	client, ctx, err := containerdConnection()
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer client.Close()
 
 	log.Printf("pulling image %s ", container.Image)
 	imageRef, err := client.Pull(ctx, container.Image, containerd.WithPullUnpack)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var containerRef containerd.Container
 	if len(container.Command) == 0 {
 		if containerRef, err = client.NewContainer(
 			ctx,
-			container.Name,
+			uuid.New().String(),
 			containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
 			containerd.WithNewSpec(
 				oci.WithImageConfig(imageRef),
@@ -57,12 +58,12 @@ func CreateContainer(container *kubeapi_rest.Container, namespace string) error 
 				oci.WithHostNamespace(specs.NetworkNamespace), // for now on host network
 			),
 		); err != nil {
-			return err
+			return "", err
 		}
 	} else {
 		if containerRef, err = client.NewContainer(
 			ctx,
-			container.Name,
+			uuid.New().String(),
 			containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
 			containerd.WithNewSpec(
 				oci.WithImageConfig(imageRef),
@@ -71,11 +72,16 @@ func CreateContainer(container *kubeapi_rest.Container, namespace string) error 
 				oci.WithHostNamespace(specs.NetworkNamespace), // for now on host network
 			),
 		); err != nil {
-			return err
+			return "", err
 		}
 	}
 
-	return startContainer(containerRef, ctx, container.Name)
+	err = startContainer(ctx, containerRef, logLocation)
+	if err != nil {
+		return "", err
+	}
+
+	return containerRef.ID(), nil
 }
 
 func convertEnvToStringSlice(container *kubeapi_rest.Container) []string {
@@ -88,10 +94,10 @@ func convertEnvToStringSlice(container *kubeapi_rest.Container) []string {
 	return env
 }
 
-func startContainer(container containerd.Container, ctx context.Context, podUID string) error {
-	log.Printf("starting container %s", podUID)
+func startContainer(ctx context.Context, container containerd.Container, logLocation string) error {
+	log.Printf("starting container %s", container.ID())
 
-	task, err := container.NewTask(ctx, cio.LogFile(fmt.Sprintf("%s/%s", defaultPodLoggingLocation, podUID)))
+	task, err := container.NewTask(ctx, cio.LogFile(logLocation))
 	if err != nil {
 		return err
 	}

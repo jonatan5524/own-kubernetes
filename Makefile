@@ -3,11 +3,11 @@ default: build push run
 TARGETS_DIR = ./cmd/services
 
 build: $(TARGETS_DIR)/*
-	  for folder in $^ ; do \
-			echo "building image from $${folder}"; \
-      docker build -t jonatan5524/own-kubernetes:$$(basename $${folder}) --build-arg dir=$${folder} --build-arg target=$$(basename $${folder}) .; \
-    done
-		go build -o ./bin/own-kubectl ./cmd/own-kubectl
+	  # for folder in $^ ; do \
+		# 	echo "building image from $${folder}"; \
+    #   docker build -t jonatan5524/own-kubernetes:$$(basename $${folder}) --build-arg dir=$${folder} --build-arg target=$$(basename $${folder}) .; \
+    # done
+		# go build -o ./bin/own-kubectl ./cmd/own-kubectl
 		env GOOS=linux GOARCH=amd64 go build -o ./bin/kubelet ./cmd/kubelet
 
 push: $(TARGETS_DIR)/*

@@ -16,14 +16,25 @@ type Pod struct {
 	Kind string `json:"kind" yaml:"kind"`
 
 	Metadata struct {
-		Name      string `json:"name" yaml:"name"`
-		Namespace string `json:"namespace" yaml:"namespace"`
-		UID       string `json:"uid" yaml:"uid"`
+		Name              string `json:"name" yaml:"name"`
+		Namespace         string `json:"namespace" yaml:"namespace"`
+		CreationTimestamp string `json:"creationTimestamp" yaml:"creationTimestamp"`
+		UID               string `json:"uid" yaml:"uid"`
 	} `json:"metadata" yaml:"metadata"`
 
 	Spec struct {
 		Containers []Container `json:"containers" yaml:"containers"`
 	} `json:"spec" yaml:"spec"`
+
+	Status struct {
+		ContainerStatuses []ContainerStatus `json:"containerStatuses" yaml:"containerStatuses"`
+	} `json:"status" yaml:"status"`
+}
+
+type ContainerStatus struct {
+	ContainerID string `json:"containerID" yaml:"containerID"`
+	Image       string `json:"image" yaml:"image"`
+	Name        string `json:"name" yaml:"name"`
 }
 
 type Container struct {
