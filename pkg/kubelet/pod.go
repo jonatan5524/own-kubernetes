@@ -1,8 +1,11 @@
 package kubelet
 
 import (
+	"bufio"
 	"fmt"
 	"log"
+	"net/http"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -12,9 +15,55 @@ import (
 )
 
 const (
-	defaultNamespace          = "default"
-	defaultPodLoggingLocation = "/home/user/kubernetes/log/pod/"
+	defaultNamespace                     = "default"
+	defaultPodLoggingLocation            = "/home/user/kubernetes/log/pod/%s/%s.log"
+	defaultPodResolvConfLocation         = "/home/user/kubernetes/kubelet/pod/%s/resolv.conf"
+	defaultPodContainerHostnameLocation  = "/home/user/kubernetes/kubelet/pod/%s/%s/hostname"
+	defaultPodContainerEtcdHostsLocation = "/home/user/kubernetes/kubelet/pod/%s/etc-hosts"
 )
+
+func ListenForPodCreation(kubeAPIEndpoint string, hostname string) error {
+	log.Printf("started watch on pod from kube API")
+
+	resp, err := http.Get(fmt.Sprintf(
+		"%s/pod/?watch=true&fieldSelector=spec.nodeName=%s",
+		kubeAPIEndpoint,
+		hostname,
+	),
+	)
+	if err != nil {
+		return fmt.Errorf("error sending request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status code not success from kube api server")
+	}
+
+	reader := bufio.NewReader(resp.Body)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("error sending request: %v", err)
+		}
+
+		line = strings.TrimSpace(line)
+
+		if len(line) == 0 {
+			continue
+		}
+
+		log.Printf("event: %s", line)
+
+		pod, err := CreatePod([]byte(line))
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Pod %s is created and started", pod.Metadata.UID)
+	}
+}
 
 func CreatePod(manifest []byte) (*kubeapi_rest.Pod, error) {
 	var pod kubeapi_rest.Pod
@@ -31,7 +80,16 @@ func CreatePod(manifest []byte) (*kubeapi_rest.Pod, error) {
 	pod.Metadata.UID = uuid.New().String()
 
 	for _, container := range pod.Spec.Containers {
-		containerID, err := kube_containerd.CreateContainer(&container, fmt.Sprintf("%s/%s/%s.log", defaultPodLoggingLocation, pod.Metadata.Name, container.Name))
+		containerID, err := kube_containerd.CreateContainer(
+			&container,
+			kube_containerd.CreateContainerSpec{
+				LogLocation:        fmt.Sprintf(defaultPodLoggingLocation, pod.Metadata.UID, container.Name),
+				ResolvConfLocation: fmt.Sprintf(defaultPodResolvConfLocation, pod.Metadata.UID),
+				HostnameLocation:   fmt.Sprintf(defaultPodContainerHostnameLocation, pod.Metadata.UID, container.Name),
+				EtcHostsLocation:   fmt.Sprintf(defaultPodContainerEtcdHostsLocation, pod.Metadata.UID),
+				HostNetwork:        pod.Spec.HostNetwork,
+			},
+		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create container %v", err)
 		}

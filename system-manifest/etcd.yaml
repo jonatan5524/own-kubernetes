@@ -18,3 +18,4 @@ spec:
       ports:
         - containerPort: 2379
         - containerPort: 4001
+  hostNetwork: true

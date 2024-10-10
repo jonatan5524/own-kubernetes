@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	restful "github.com/emicklei/go-restful/v3"
 	"github.com/jonatan5524/own-kubernetes/pkg"
-	etcdService "github.com/jonatan5524/own-kubernetes/pkg/kube-api/etcd"
+	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/etcd"
 	kubeapi_logger "github.com/jonatan5524/own-kubernetes/pkg/kube-api/logger"
+	"github.com/tidwall/gjson"
 )
 
-type Pod struct {
-	Kind string `json:"kind" yaml:"kind"`
+var etcdServiceApp etcd.EtcdService
 
+type Pod struct {
 	Metadata struct {
 		Name              string `json:"name" yaml:"name"`
 		Namespace         string `json:"namespace" yaml:"namespace"`
@@ -22,13 +24,17 @@ type Pod struct {
 		UID               string `json:"uid" yaml:"uid"`
 	} `json:"metadata" yaml:"metadata"`
 
-	Spec struct {
-		Containers []Container `json:"containers" yaml:"containers"`
-	} `json:"spec" yaml:"spec"`
+	Kind string `json:"kind" yaml:"kind"`
 
 	Status struct {
 		ContainerStatuses []ContainerStatus `json:"containerStatuses" yaml:"containerStatuses"`
 	} `json:"status" yaml:"status"`
+
+	Spec struct {
+		NodeName    string      `json:"nodeName" yaml:"nodeName"`
+		Containers  []Container `json:"containers" yaml:"containers"`
+		HostNetwork bool        `json:"hostNetwork" yaml:"hostNetwork"`
+	} `json:"spec" yaml:"spec"`
 }
 
 type ContainerStatus struct {
@@ -54,8 +60,10 @@ type Container struct {
 	} `json:"env" yaml:"env"`
 }
 
-func (pod *Pod) Register() {
+func (pod *Pod) Register(etcdServersEndpoints string) {
 	log.Println("rest api pod register")
+
+	etcdServiceApp = etcd.NewEtcdService(etcdServersEndpoints)
 
 	ws := new(restful.WebService)
 
@@ -65,8 +73,10 @@ func (pod *Pod) Register() {
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
+	// TODO: refactor for get all and then watch if flag is true
 	ws.Route(ws.GET("/").To(pod.watcher).
-		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool")))
+		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
+		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
 	ws.Route(ws.GET("/{name}").To(pod.get).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
@@ -82,11 +92,11 @@ func (pod *Pod) Register() {
 
 func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
 	name := req.PathParameter("name")
-	res, err := etcdService.GetResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, name))
+	res, err := etcdServiceApp.GetResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, name))
 	if err != nil {
-		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
+		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			log.Fatalf("err while sending error: %v", err)
+			resp.WriteError(http.StatusInternalServerError, err)
 		}
 
 		return
@@ -94,9 +104,9 @@ func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
 
 	var podRes Pod
 	if err = json.Unmarshal(res, &podRes); err != nil {
-		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
+		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			log.Fatalf("err while sending error: %v", err)
+			resp.WriteError(http.StatusInternalServerError, err)
 		}
 
 		return
@@ -104,29 +114,28 @@ func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
 
 	err = resp.WriteEntity(podRes)
 	if err != nil {
-		log.Fatalf("err while sending response: %v", err)
+		resp.WriteError(http.StatusInternalServerError, err)
 	}
 }
 
 func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 	watchQuery := req.QueryParameter("watch")
+	fieldSelector := req.QueryParameter("fieldSelector")
 
 	if watchQuery != "true" {
 		return
 	}
-
-	log.Println("Client pod watcher started")
 
 	resp.Header().Set("Access-Control-Allow-Origin", "*")
 	resp.Header().Set("Content-Type", "text/event-stream")
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 
-	watchChan, closeChanFunc, err := etcdService.GetWatchChannel(pkg.PodEtcdKey)
+	watchChan, closeChanFunc, err := etcdServiceApp.GetWatchChannel(pkg.PodEtcdKey)
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
-			log.Fatalf("err while sending error: %v", err)
+			resp.WriteError(http.StatusInternalServerError, err)
 		}
 
 		return
@@ -134,15 +143,29 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 	defer closeChanFunc()
 	defer resp.CloseNotify()
 
+	log.Println("Client pod watcher started")
+
 	for {
 		select {
 		case watchResp := <-watchChan:
 			if watchResp.Err() != nil {
-				log.Fatal("error watcher")
+				resp.WriteError(http.StatusInternalServerError, err)
 			}
 
 			for _, event := range watchResp.Events {
-				fmt.Fprintf(resp, "%s executed on %q with value %q\n", event.Type, event.Kv.Key, event.Kv.Value)
+				log.Printf("watch: %s executed on %s with value %s\n", event.Type, string(event.Kv.Key), string(event.Kv.Value))
+
+				if fieldSelector == "" {
+					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
+				} else {
+					splitedFieldSelector := strings.Split(fieldSelector, "=")
+					resGJSON := gjson.Get(string(event.Kv.Value), splitedFieldSelector[0])
+
+					if resGJSON.Exists() && resGJSON.Value() == splitedFieldSelector[1] {
+						fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
+					}
+				}
+
 				resp.Flush()
 			}
 
@@ -157,9 +180,9 @@ func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
 	newPod := new(Pod)
 	err := req.ReadEntity(newPod)
 	if err != nil {
-		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
+		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			log.Fatalf("err while sending error: %v", err)
+			resp.WriteError(http.StatusInternalServerError, err)
 		}
 
 		return
@@ -169,11 +192,11 @@ func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
 		panic(err)
 	}
 
-	err = etcdService.PutResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, newPod.Metadata.Name), string(podBytes))
+	err = etcdServiceApp.PutResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, newPod.Metadata.Name), string(podBytes))
 	if err != nil {
-		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
+		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			log.Fatalf("err while sending error: %v", err)
+			resp.WriteError(http.StatusInternalServerError, err)
 		}
 
 		return
@@ -181,18 +204,18 @@ func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
 
 	err = resp.WriteEntity("success")
 	if err != nil {
-		log.Fatalf("err while sending error: %v", err)
+		resp.WriteError(http.StatusInternalServerError, err)
 	}
 }
 
 func (pod *Pod) delete(req *restful.Request, resp *restful.Response) {
 	name := req.PathParameter("name")
 
-	err := etcdService.DeleteResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, name))
+	err := etcdServiceApp.DeleteResource(fmt.Sprintf("%s/%s", pkg.PodEtcdKey, name))
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
-			log.Fatalf("err while sending error: %v", err)
+			resp.WriteError(http.StatusInternalServerError, err)
 		}
 
 		return
@@ -200,6 +223,6 @@ func (pod *Pod) delete(req *restful.Request, resp *restful.Response) {
 
 	err = resp.WriteEntity("success")
 	if err != nil {
-		log.Fatalf("err while sending error: %v", err)
+		resp.WriteError(http.StatusInternalServerError, err)
 	}
 }

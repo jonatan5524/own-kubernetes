@@ -3,6 +3,8 @@ package ownkubectl
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -27,7 +29,12 @@ func CreateResource(file string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status code not success from kube api server")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("error from api: %s %s", resp.Status, string(body))
 	}
 
 	return nil

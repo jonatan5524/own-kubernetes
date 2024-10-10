@@ -2,8 +2,12 @@ package utils
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
@@ -50,4 +54,25 @@ func GenerateNewID(name string) string {
 	id := uuid.New()
 
 	return fmt.Sprintf("%s-%s", name, id)
+}
+
+func CreateDirectory(path string, mode fs.FileMode) error {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return os.MkdirAll(path, mode)
+	}
+
+	return nil
+}
+
+func CreateAndWriteToFile(path string, data string, mode fs.FileMode) error {
+	if err := CreateDirectory(filepath.Dir(path), 0o755); err != nil {
+		log.Fatalf("error creating %s: %v", path, err)
+	}
+
+	err := os.WriteFile(path, []byte(data), mode)
+	if err != nil {
+		return fmt.Errorf("error creating %s: %v", path, err)
+	}
+
+	return nil
 }

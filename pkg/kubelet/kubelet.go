@@ -1,20 +1,27 @@
 package kubelet
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 )
 
 type Kubelet interface {
-	Run()
-	Setup()
-	Stop()
+	Run() error
+	Setup() error
+	Stop() error
 }
 
 type KubeletApp struct {
+	logFile            *os.File
 	systemManifestPath string
 	loggingLocation    string
-	logFile            *os.File
+	kubeAPIEndpoint    string
+	hostname           string
 }
 
 const (
@@ -22,33 +29,55 @@ const (
 	defaultLoggingLocation    = "/home/user/kubernetes/log/kubelet.log"
 )
 
-func NewKubelet() Kubelet {
+func NewKubelet(kubeAPIEndpoint string) Kubelet {
 	return &KubeletApp{
 		systemManifestPath: defaultSystemManifestPath,
 		loggingLocation:    defaultLoggingLocation,
+		kubeAPIEndpoint:    kubeAPIEndpoint,
 	}
 }
 
-func (app *KubeletApp) Setup() {
+func (app *KubeletApp) Setup() error {
 	log.Println("kubelet setup")
 
-	file, err := os.OpenFile(app.loggingLocation, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+	hostname, err := os.Hostname()
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("hostname not found")
+	}
+	app.hostname = hostname
+	log.Printf("running on host %s", hostname)
+
+	if err = utils.CreateDirectory(filepath.Dir(app.loggingLocation), 0o644); err != nil {
+		return fmt.Errorf("unable to create log file location %v", err)
+	}
+	file, err := os.OpenFile(app.loggingLocation, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
 	}
 
 	log.SetOutput(file)
 	app.logFile = file
+
+	return nil
 }
 
-func (app *KubeletApp) Run() {
+func (app *KubeletApp) Run() error {
 	log.Println("kubelet running")
 
 	if err := ReadAndStartSystemManifests(app.systemManifestPath); err != nil {
-		log.Fatalf("%v", err)
+		return fmt.Errorf("%v", err)
 	}
+
+	// TODO: switch later for wait for kube-api to be ready
+	time.Sleep(5 * time.Second)
+
+	if err := ListenForPodCreation(app.kubeAPIEndpoint, app.hostname); err != nil {
+		return fmt.Errorf("%v", err)
+	}
+
+	return nil
 }
 
-func (app *KubeletApp) Stop() {
-	app.logFile.Close()
+func (app *KubeletApp) Stop() error {
+	return app.logFile.Close()
 }

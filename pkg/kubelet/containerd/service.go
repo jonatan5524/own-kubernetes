@@ -13,12 +13,23 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	kubeapi_rest "github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
+	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 )
 
 const (
 	containerdSocketPath = "/run/containerd/containerd.sock"
 	defaultNamespace     = "own-kube"
+	defaultDNSConfig     = "nameserver 8.8.8.8\nnameserver 8.8.4.4\n"
+	defaultEtcHosts      = "127.0.0.1 localhost\n" // TODO: add container ip and container name
 )
+
+type CreateContainerSpec struct {
+	LogLocation        string
+	ResolvConfLocation string
+	HostnameLocation   string
+	EtcHostsLocation   string
+	HostNetwork        bool
+}
 
 func containerdConnection() (*containerd.Client, context.Context, error) {
 	client, err := containerd.New(containerdSocketPath)
@@ -31,7 +42,10 @@ func containerdConnection() (*containerd.Client, context.Context, error) {
 	return client, ctx, nil
 }
 
-func CreateContainer(container *kubeapi_rest.Container, logLocation string) (string, error) {
+func CreateContainer(
+	container *kubeapi_rest.Container,
+	createContainerSpec CreateContainerSpec,
+) (string, error) {
 	log.Printf("creating container %s with containerd", container.Name)
 
 	client, ctx, err := containerdConnection()
@@ -46,37 +60,26 @@ func CreateContainer(container *kubeapi_rest.Container, logLocation string) (str
 		return "", err
 	}
 
-	var containerRef containerd.Container
-	if len(container.Command) == 0 {
-		if containerRef, err = client.NewContainer(
-			ctx,
-			uuid.New().String(),
-			containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
-			containerd.WithNewSpec(
-				oci.WithImageConfig(imageRef),
-				oci.WithEnv(convertEnvToStringSlice(container)),
-				oci.WithHostNamespace(specs.NetworkNamespace), // for now on host network
-			),
-		); err != nil {
-			return "", err
-		}
-	} else {
-		if containerRef, err = client.NewContainer(
-			ctx,
-			uuid.New().String(),
-			containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
-			containerd.WithNewSpec(
-				oci.WithImageConfig(imageRef),
-				oci.WithEnv(convertEnvToStringSlice(container)),
-				oci.WithProcessArgs(append(container.Command, container.Args...)...),
-				oci.WithHostNamespace(specs.NetworkNamespace), // for now on host network
-			),
-		); err != nil {
-			return "", err
-		}
+	containerSpec, err := buildContainerSpec(
+		imageRef,
+		container,
+		createContainerSpec,
+	)
+	if err != nil {
+		return "", err
 	}
 
-	err = startContainer(ctx, containerRef, logLocation)
+	containerRef, err := client.NewContainer(
+		ctx,
+		uuid.New().String(),
+		containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
+		containerd.WithNewSpec(containerSpec...),
+	)
+	if err != nil {
+		return "", err
+	}
+
+	err = startContainer(ctx, containerRef, createContainerSpec.LogLocation)
 	if err != nil {
 		return "", err
 	}
@@ -103,4 +106,75 @@ func startContainer(ctx context.Context, container containerd.Container, logLoca
 	}
 
 	return task.Start(ctx)
+}
+
+func getDefaultContainerMounts(container *kubeapi_rest.Container, resolvConfLocation string, hostnameLocation string, etcHostsLocation string) ([]specs.Mount, error) {
+	var mounts []specs.Mount
+
+	// TODO: currently public dns server and not coredns
+	if err := utils.CreateAndWriteToFile(resolvConfLocation, defaultDNSConfig, 0o644); err != nil {
+		return mounts, err
+	}
+	mounts = append(mounts, specs.Mount{
+		Source:      resolvConfLocation,
+		Destination: "/etc/resolv.conf",
+		Type:        "bind",
+		Options:     []string{"rbind", "rw"},
+	})
+
+	if err := utils.CreateAndWriteToFile(hostnameLocation, container.Name, 0o644); err != nil {
+		return mounts, err
+	}
+	mounts = append(mounts, specs.Mount{
+		Source:      hostnameLocation,
+		Destination: "/etc/hostname",
+		Type:        "bind",
+		Options:     []string{"rbind", "rw"},
+	})
+
+	if err := utils.CreateAndWriteToFile(etcHostsLocation, defaultEtcHosts, 0o644); err != nil {
+		return mounts, err
+	}
+	mounts = append(mounts, specs.Mount{
+		Source:      etcHostsLocation,
+		Destination: "/etc/hosts",
+		Type:        "bind",
+		Options:     []string{"rbind", "rw"},
+	})
+
+	return mounts, nil
+}
+
+func buildContainerSpec(
+	imageRef oci.Image,
+	container *kubeapi_rest.Container,
+	createContainerSpec CreateContainerSpec,
+) ([]oci.SpecOpts, error) {
+	specsOpts := []oci.SpecOpts{}
+
+	mounts, err := getDefaultContainerMounts(
+		container,
+		createContainerSpec.ResolvConfLocation,
+		createContainerSpec.HostnameLocation,
+		createContainerSpec.EtcHostsLocation,
+	)
+	if err != nil {
+		return specsOpts, err
+	}
+
+	specsOpts = append(specsOpts,
+		oci.WithImageConfig(imageRef),
+		oci.WithEnv(convertEnvToStringSlice(container)),
+		oci.WithMounts(mounts),
+	)
+
+	if len(container.Command) != 0 {
+		specsOpts = append(specsOpts, oci.WithProcessArgs(append(container.Command, container.Args...)...))
+	}
+
+	if createContainerSpec.HostNetwork {
+		specsOpts = append(specsOpts, oci.WithHostNamespace(specs.NetworkNamespace))
+	}
+
+	return specsOpts, nil
 }

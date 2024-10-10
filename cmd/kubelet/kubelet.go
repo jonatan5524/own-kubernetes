@@ -1,13 +1,9 @@
 package main
 
 import (
-	"github.com/jonatan5524/own-kubernetes/pkg/kubelet"
+	"github.com/jonatan5524/own-kubernetes/pkg/kubelet/cmd"
 )
 
 func main() {
-	app := kubelet.NewKubelet()
-	defer app.Stop()
-
-	app.Setup()
-	app.Run()
+	cmd.Execute()
 }

@@ -6,3 +6,5 @@ spec:
   containers:
     - name: test
       image: docker.io/jonatan5524/own-kubernetes:test
+  nodeName: worker
+  

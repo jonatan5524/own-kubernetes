@@ -3,11 +3,11 @@ default: build push run
 TARGETS_DIR = ./cmd/services
 
 build: $(TARGETS_DIR)/*
-	  # for folder in $^ ; do \
-		# 	echo "building image from $${folder}"; \
-    #   docker build -t jonatan5524/own-kubernetes:$$(basename $${folder}) --build-arg dir=$${folder} --build-arg target=$$(basename $${folder}) .; \
-    # done
-		# go build -o ./bin/own-kubectl ./cmd/own-kubectl
+	  for folder in $^ ; do \
+			echo "building image from $${folder}"; \
+      docker build -t jonatan5524/own-kubernetes:$$(basename $${folder}) --build-arg dir=$${folder} --build-arg target=$$(basename $${folder}) .; \
+    done
+		go build -o ./bin/own-kubectl ./cmd/own-kubectl
 		env GOOS=linux GOARCH=amd64 go build -o ./bin/kubelet ./cmd/kubelet
 
 push: $(TARGETS_DIR)/*
@@ -35,8 +35,11 @@ start-node:
 	qemu-system-x86_64 -hda ./vms/debian-node.img -m 4000 -accel kvm \
 		-smp 2,sockets=1,cores=2,threads=1 -netdev bridge,id=hn0,br=virbr0 -device virtio-net-pci,netdev=hn0,id=nic1,mac=DE:AD:BE:EF:E0:00 &
 	sleep 30
-	scp ./bin/kubelet user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}'):/home/user/kubelet
-	scp ./system-manifest/* user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}'):/home/user/kubernetes/manifests
+	scp -i ./vms/.ssh/id_rsa ./bin/kubelet user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}'):/home/user/kubelet
+	scp -i ./vms/.ssh/id_rsa ./system-manifest/* user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}'):/home/user/kubernetes/manifests
+
+ssh-node:
+	ssh -i ./vms/.ssh/id_rsa user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}')
 
 stop-node:
 	kill `ps ax | grep "qemu-system-x86_64" | awk 'NR==1{print $1}'`

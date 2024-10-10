@@ -6,8 +6,10 @@ spec:
   containers:
     - name: kube-apiserver
       image: docker.io/jonatan5524/own-kubernetes:kube-api
+      command: ["./kube-api"]
+      args:
+        - "--etcd-servers"
+        - "http://localhost:2379"
       ports:
         - containerPort: 8080
-      env:
-        - name: ETCD_ENDPOINT
-          value: etcd
+  hostNetwork: true

@@ -10,6 +10,23 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+type EtcdService interface {
+	GetResource(string) ([]byte, error)
+	PutResource(string, string) error
+	DeleteResource(string) error
+	GetWatchChannel(string) (clientv3.WatchChan, func(), error)
+}
+
+type EtcdServiceApp struct {
+	endpoints string
+}
+
+func NewEtcdService(endpoint string) EtcdService {
+	return &EtcdServiceApp{
+		endpoints: endpoint,
+	}
+}
+
 func connect() (*clientv3.Client, error) {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{fmt.Sprintf("%s:2379", os.Getenv("ETCD_ENDPOINT"))},
@@ -22,7 +39,7 @@ func connect() (*clientv3.Client, error) {
 	return cli, nil
 }
 
-func GetResource(key string) ([]byte, error) {
+func (app *EtcdServiceApp) GetResource(key string) ([]byte, error) {
 	cli, err := connect()
 	if err != nil {
 		return nil, err
@@ -43,7 +60,7 @@ func GetResource(key string) ([]byte, error) {
 	return resp.Kvs[0].Value, nil
 }
 
-func PutResource(key string, value string) error {
+func (app *EtcdServiceApp) PutResource(key string, value string) error {
 	cli, err := connect()
 	if err != nil {
 		return err
@@ -61,7 +78,7 @@ func PutResource(key string, value string) error {
 	return nil
 }
 
-func DeleteResource(key string) error {
+func (app *EtcdServiceApp) DeleteResource(key string) error {
 	cli, err := connect()
 	if err != nil {
 		return err
@@ -79,7 +96,7 @@ func DeleteResource(key string) error {
 	return nil
 }
 
-func GetWatchChannel(key string) (clientv3.WatchChan, func(), error) {
+func (app *EtcdServiceApp) GetWatchChannel(key string) (clientv3.WatchChan, func(), error) {
 	cli, err := connect()
 	if err != nil {
 		return nil, nil, err
