@@ -12,6 +12,7 @@ import (
 
 type EtcdService interface {
 	GetResource(string) ([]byte, error)
+	GetAllFromResource(string) ([][]byte, error)
 	PutResource(string, string) error
 	DeleteResource(string) error
 	GetWatchChannel(string) (clientv3.WatchChan, func(), error)
@@ -58,6 +59,32 @@ func (app *EtcdServiceApp) GetResource(key string) ([]byte, error) {
 	}
 
 	return resp.Kvs[0].Value, nil
+}
+
+func (app *EtcdServiceApp) GetAllFromResource(key string) ([][]byte, error) {
+	cli, err := connect()
+	if err != nil {
+		return nil, err
+	}
+	defer cli.Close()
+
+	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	resp, err := cli.Get(context.Background(), key, clientv3.WithPrefix())
+	// cancel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get: %v", err)
+	}
+
+	if len(resp.Kvs) == 0 {
+		return nil, fmt.Errorf("key not found for: %s", key)
+	}
+
+	var values [][]byte
+	for _, key := range resp.Kvs {
+		values = append(values, key.Value)
+	}
+
+	return values, nil
 }
 
 func (app *EtcdServiceApp) PutResource(key string, value string) error {

@@ -19,7 +19,7 @@ func CreateResource(file string) error {
 	}
 
 	resp, err := http.Post(
-		fmt.Sprintf("%s/%s", os.Getenv("KUBE_API_ENDPOINT"), strings.ToLower(kind)),
+		fmt.Sprintf("%s/%ss", os.Getenv("KUBE_API_ENDPOINT"), strings.ToLower(kind)),
 		"application/json",
 		bytes.NewReader(data),
 	)

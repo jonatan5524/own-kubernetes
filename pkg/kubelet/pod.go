@@ -26,7 +26,7 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string) error {
 	log.Printf("started watch on pod from kube API")
 
 	resp, err := http.Get(fmt.Sprintf(
-		"%s/pod/?watch=true&fieldSelector=spec.nodeName=%s",
+		"%s/pods/?watch=true&fieldSelector=spec.nodeName=%s",
 		kubeAPIEndpoint,
 		hostname,
 	),

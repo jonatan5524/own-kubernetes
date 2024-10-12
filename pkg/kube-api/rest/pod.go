@@ -69,12 +69,11 @@ func (pod *Pod) Register(etcdServersEndpoints string) {
 
 	ws.Filter(kubeapi_logger.LoggerMiddleware)
 
-	ws.Path("/pod").
+	ws.Path("/pods").
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
-	// TODO: refactor for get all and then watch if flag is true
-	ws.Route(ws.GET("/").To(pod.watcher).
+	ws.Route(ws.GET("/").To(pod.getAll).
 		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
@@ -113,6 +112,46 @@ func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
 	}
 
 	err = resp.WriteEntity(podRes)
+	if err != nil {
+		resp.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
+	watchQuery := req.QueryParameter("watch")
+
+	if watchQuery == "true" {
+		pod.watcher(req, resp)
+
+		return
+	}
+
+	resArr, err := etcdServiceApp.GetAllFromResource(pkg.PodEtcdKey)
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	var podsRes []Pod
+	for _, res := range resArr {
+		var pod Pod
+		if err = json.Unmarshal(res, &pod); err != nil {
+			err = resp.WriteError(http.StatusBadRequest, err)
+			if err != nil {
+				resp.WriteError(http.StatusInternalServerError, err)
+			}
+
+			return
+		}
+
+		podsRes = append(podsRes, pod)
+	}
+
+	err = resp.WriteEntity(podsRes)
 	if err != nil {
 		resp.WriteError(http.StatusInternalServerError, err)
 	}

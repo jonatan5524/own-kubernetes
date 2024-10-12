@@ -1,6 +1,6 @@
 kind: Pod
 metadata:
-  name: test3
+  name: test2
   namespace: test
 spec:
   containers:
