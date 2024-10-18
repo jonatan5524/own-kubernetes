@@ -24,11 +24,14 @@ const (
 )
 
 type CreateContainerSpec struct {
-	LogLocation        string
-	ResolvConfLocation string
-	HostnameLocation   string
-	EtcHostsLocation   string
-	HostNetwork        bool
+	LogLocation          string
+	ResolvConfLocation   string
+	HostnameLocation     string
+	EtcHostsLocation     string
+	NetworkNamespacePath string
+	IPCNamespacePath     string
+	HostNetwork          bool
+	ContainerID          string
 }
 
 func containerdConnection() (*containerd.Client, context.Context, error) {
@@ -69,9 +72,13 @@ func CreateContainer(
 		return "", err
 	}
 
+	if createContainerSpec.ContainerID == "" {
+		createContainerSpec.ContainerID = uuid.New().String()
+	}
+
 	containerRef, err := client.NewContainer(
 		ctx,
-		uuid.New().String(),
+		createContainerSpec.ContainerID,
 		containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
 		containerd.WithNewSpec(containerSpec...),
 	)
@@ -168,6 +175,24 @@ func buildContainerSpec(
 		oci.WithMounts(mounts),
 	)
 
+	if createContainerSpec.NetworkNamespacePath != "" {
+		specsOpts = append(specsOpts,
+			oci.WithLinuxNamespace(specs.LinuxNamespace{
+				Type: specs.NetworkNamespace,
+				Path: createContainerSpec.NetworkNamespacePath,
+			}),
+		)
+	}
+
+	if createContainerSpec.IPCNamespacePath != "" {
+		specsOpts = append(specsOpts,
+			oci.WithLinuxNamespace(specs.LinuxNamespace{
+				Type: specs.IPCNamespace,
+				Path: createContainerSpec.IPCNamespacePath,
+			}),
+		)
+	}
+
 	if len(container.Command) != 0 {
 		specsOpts = append(specsOpts, oci.WithProcessArgs(append(container.Command, container.Args...)...))
 	}
@@ -177,4 +202,30 @@ func buildContainerSpec(
 	}
 
 	return specsOpts, nil
+}
+
+func GetContainerPID(containerID string) (uint32, error) {
+	currentContainerTask, err := getContainerCurrentTask(containerID)
+	if err != nil {
+		return 0, err
+	}
+
+	return currentContainerTask.Pid(), err
+}
+
+func getContainerCurrentTask(containerID string) (containerd.Task, error) {
+	log.Printf("get current container %s task", containerID)
+
+	client, ctx, err := containerdConnection()
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	containerRef, err := client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, err
+	}
+
+	return containerRef.Task(ctx, cio.Load)
 }

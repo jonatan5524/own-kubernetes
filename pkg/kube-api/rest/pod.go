@@ -27,6 +27,7 @@ type Pod struct {
 	Kind string `json:"kind" yaml:"kind"`
 
 	Status struct {
+		PodIP             string            `json:"podIP" yaml:"podIP"`
 		ContainerStatuses []ContainerStatus `json:"containerStatuses" yaml:"containerStatuses"`
 	} `json:"status" yaml:"status"`
 

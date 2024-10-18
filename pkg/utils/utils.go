@@ -7,7 +7,9 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
@@ -72,6 +74,28 @@ func CreateAndWriteToFile(path string, data string, mode fs.FileMode) error {
 	err := os.WriteFile(path, []byte(data), mode)
 	if err != nil {
 		return fmt.Errorf("error creating %s: %v", path, err)
+	}
+
+	return nil
+}
+
+func ReplaceAtIndex(str string, replacement rune, index int) string {
+	return str[:index] + string(replacement) + str[index+1:]
+}
+
+func ExecuteCommand(command string, waitToComplete bool) error {
+	log.Printf("Executing: %s", command)
+
+	splitedCommand := strings.Split(command, " ")
+	cmd := exec.Command(splitedCommand[0], splitedCommand[1:]...)
+
+	stdout, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("error running command: %v", err)
+	}
+
+	if len(stdout) > 0 {
+		log.Printf("command output: %s", string(stdout))
 	}
 
 	return nil

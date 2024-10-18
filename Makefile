@@ -1,20 +1,24 @@
-default: build push run
+default: build-images build-bin push-images start-node ssh-node
 
 TARGETS_DIR = ./cmd/services
 
-build: $(TARGETS_DIR)/*
-	  for folder in $^ ; do \
+build-images:
+	  for folder in  $(TARGETS_DIR)/*; do \
 			echo "building image from $${folder}"; \
       docker build -t jonatan5524/own-kubernetes:$$(basename $${folder}) --build-arg dir=$${folder} --build-arg target=$$(basename $${folder}) .; \
     done
-		go build -o ./bin/own-kubectl ./cmd/own-kubectl
-		env GOOS=linux GOARCH=amd64 go build -o ./bin/kubelet ./cmd/kubelet
+		docker build -t jonatan5524/own-kubernetes:pause ./hack/pause-container
 
-push: $(TARGETS_DIR)/*
-		for folder in $^ ; do \
+build-bin:
+	go build -o ./bin/own-kubectl ./cmd/own-kubectl
+	env GOOS=linux GOARCH=amd64 go build -o ./bin/kubelet ./cmd/kubelet
+
+push-images:
+		for folder in  $(TARGETS_DIR)/*; do \
 			echo "pushing image to jonatan5524/own-kubernetes:$$(basename $${folder})"; \
 			docker push jonatan5524/own-kubernetes:$$(basename $${folder}); \
     done
+		docker push jonatan5524/own-kubernetes:pause
 
 run: 
 	docker network create bridge-kube || true
@@ -39,6 +43,7 @@ start-node:
 	scp -i ./vms/.ssh/id_rsa ./system-manifest/* user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}'):/home/user/kubernetes/manifests
 
 ssh-node:
+ 	# echo "for starting kubelet: sudo ./kubelet --kubernetes-api-endpoint 'http://localhost:8080'"
 	ssh -i ./vms/.ssh/id_rsa user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}')
 
 stop-node:

@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
+	kubelet_net "github.com/jonatan5524/own-kubernetes/pkg/kubelet/net"
+	"github.com/jonatan5524/own-kubernetes/pkg/kubelet/pod"
 	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 )
 
-func ReadAndStartSystemManifests(systemManifestPath string) error {
+func readAndStartSystemManifests(systemManifestPath string) error {
 	log.Printf("Reading manifest in system %s", systemManifestPath)
 
 	files, err := os.ReadDir(systemManifestPath)
@@ -25,12 +27,24 @@ func ReadAndStartSystemManifests(systemManifestPath string) error {
 		}
 
 		if kind == "Pod" {
-			pod, err := CreatePod(data)
+			pod, err := pod.CreatePod(data, podCIDR, podBridgeName)
 			if err != nil {
 				return err
 			}
 
 			log.Printf("Pod %s is created and started", pod.Metadata.UID)
+		}
+	}
+
+	return nil
+}
+
+func initCIDRPodNetwork(cidr string, bridgeName string) error {
+	log.Printf("setting up pod cidr %s with bridge name %s", cidr, bridgeName)
+
+	if !kubelet_net.IsNetDeviceExists(bridgeName) {
+		if err := kubelet_net.CreateBridge(bridgeName, podCIDR); err != nil {
+			return err
 		}
 	}
 

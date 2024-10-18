@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jonatan5524/own-kubernetes/pkg/kubelet/pod"
 	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 )
 
@@ -27,6 +28,8 @@ type KubeletApp struct {
 const (
 	defaultSystemManifestPath = "/home/user/kubernetes/manifests"
 	defaultLoggingLocation    = "/home/user/kubernetes/log/kubelet.log"
+	podCIDR                   = "10.244.0.0/16"
+	podBridgeName             = "br0"
 )
 
 func NewKubelet(kubeAPIEndpoint string) Kubelet {
@@ -58,20 +61,24 @@ func (app *KubeletApp) Setup() error {
 	log.SetOutput(file)
 	app.logFile = file
 
+	if err := initCIDRPodNetwork(podCIDR, podBridgeName); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (app *KubeletApp) Run() error {
 	log.Println("kubelet running")
 
-	if err := ReadAndStartSystemManifests(app.systemManifestPath); err != nil {
+	if err := readAndStartSystemManifests(app.systemManifestPath); err != nil {
 		return fmt.Errorf("%v", err)
 	}
 
 	// TODO: switch later for wait for kube-api to be ready
 	time.Sleep(5 * time.Second)
 
-	if err := ListenForPodCreation(app.kubeAPIEndpoint, app.hostname); err != nil {
+	if err := pod.ListenForPodCreation(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {
 		return fmt.Errorf("%v", err)
 	}
 
