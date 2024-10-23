@@ -71,12 +71,22 @@ func (app *KubeletApp) Setup() error {
 func (app *KubeletApp) Run() error {
 	log.Println("kubelet running")
 
-	if err := readAndStartSystemManifests(app.systemManifestPath); err != nil {
+	pods, err := readAndStartSystemManifests(app.systemManifestPath, app.hostname)
+	if err != nil {
 		return fmt.Errorf("%v", err)
 	}
 
 	// TODO: switch later for wait for kube-api to be ready
 	time.Sleep(5 * time.Second)
+
+	if len(pods) > 0 {
+		for _, podRes := range pods {
+			err := pod.UpdatePod(app.kubeAPIEndpoint, *podRes)
+			if err != nil {
+				return fmt.Errorf("error sending system pods to api: %v", err)
+			}
+		}
+	}
 
 	if err := pod.ListenForPodCreation(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {
 		return fmt.Errorf("%v", err)

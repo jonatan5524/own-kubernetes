@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,12 +49,6 @@ func convertYAMLtoJSON(data []byte) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(yamlData, "", "  ")
-}
-
-func GenerateNewID(name string) string {
-	id := uuid.New()
-
-	return fmt.Sprintf("%s-%s", name, id)
 }
 
 func CreateDirectory(path string, mode fs.FileMode) error {

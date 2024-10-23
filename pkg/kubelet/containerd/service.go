@@ -73,7 +73,7 @@ func CreateContainer(
 	}
 
 	if createContainerSpec.ContainerID == "" {
-		createContainerSpec.ContainerID = uuid.New().String()
+		createContainerSpec.ContainerID = uuid.NewString()
 	}
 
 	containerRef, err := client.NewContainer(

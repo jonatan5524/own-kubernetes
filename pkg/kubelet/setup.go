@@ -1,16 +1,19 @@
 package kubelet
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 
+	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
 	kubelet_net "github.com/jonatan5524/own-kubernetes/pkg/kubelet/net"
 	"github.com/jonatan5524/own-kubernetes/pkg/kubelet/pod"
 	"github.com/jonatan5524/own-kubernetes/pkg/utils"
+	"gopkg.in/yaml.v3"
 )
 
-func readAndStartSystemManifests(systemManifestPath string) error {
+func readAndStartSystemManifests(systemManifestPath string, hostname string) ([]*rest.Pod, error) {
 	log.Printf("Reading manifest in system %s", systemManifestPath)
 
 	files, err := os.ReadDir(systemManifestPath)
@@ -18,25 +21,36 @@ func readAndStartSystemManifests(systemManifestPath string) error {
 		log.Fatal(err)
 	}
 
+	var pods []*rest.Pod
+
 	for _, file := range files {
 		log.Printf("Reading file %s", file.Name())
 
 		data, kind, err := utils.ReadResource(filepath.Join(systemManifestPath, file.Name()), false)
 		if err != nil {
-			return err
+			return pods, err
 		}
 
 		if kind == "Pod" {
-			pod, err := pod.CreatePod(data, podCIDR, podBridgeName)
+			var podResManifest rest.Pod
+			err = yaml.Unmarshal(data, &podResManifest)
 			if err != nil {
-				return err
+				return pods, fmt.Errorf("error parsing pod from event: %v", err)
 			}
 
-			log.Printf("Pod %s is created and started", pod.Metadata.UID)
+			podRes, err := pod.CreatePod(podResManifest, podCIDR, podBridgeName)
+			if err != nil {
+				return pods, err
+			}
+
+			podRes.Spec.NodeName = hostname
+			pods = append(pods, podRes)
+
+			log.Printf("Pod %s %s is created and started", podRes.Metadata.Name, podRes.Metadata.UID)
 		}
 	}
 
-	return nil
+	return pods, err
 }
 
 func initCIDRPodNetwork(cidr string, bridgeName string) error {
