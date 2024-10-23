@@ -7,13 +7,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var file string
+const fileFlag = "file"
 
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create new resource",
-	RunE: func(_ *cobra.Command, _ []string) error {
-		if err := ownkubectl.CreateResource(file); err != nil {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		filename, err := cmd.Flags().GetString(fileFlag)
+		if err != nil {
+			return err
+		}
+
+		if err := ownkubectl.CreateResource(filename); err != nil {
 			return err
 		}
 
@@ -25,8 +30,8 @@ var createCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(createCmd)
-	createCmd.Flags().StringVar(&file, "file", "", "manifest file of the resource")
-	err := createCmd.MarkFlagRequired("file")
+	createCmd.Flags().StringP(fileFlag, "f", "", "manifest file of the resource")
+	err := createCmd.MarkFlagRequired(fileFlag)
 	if err != nil {
 		panic(err)
 	}
