@@ -13,13 +13,17 @@ import (
 )
 
 func CreateResource(file string) error {
-	data, kind, err := utils.ReadResource(file, true)
+	data, kind, namespace, err := utils.ReadResource(file, true)
 	if err != nil {
 		return err
 	}
 
+	if namespace == "" {
+		namespace = "default"
+	}
+
 	resp, err := http.Post(
-		fmt.Sprintf("%s/%ss", os.Getenv("KUBE_API_ENDPOINT"), strings.ToLower(kind)),
+		fmt.Sprintf("%s/namespaces/%s/%ss", os.Getenv("KUBE_API_ENDPOINT"), namespace, strings.ToLower(kind)),
 		"application/json",
 		bytes.NewReader(data),
 	)

@@ -26,7 +26,7 @@ func readAndStartSystemManifests(systemManifestPath string, hostname string) ([]
 	for _, file := range files {
 		log.Printf("Reading file %s", file.Name())
 
-		data, kind, err := utils.ReadResource(filepath.Join(systemManifestPath, file.Name()), false)
+		data, kind, _, err := utils.ReadResource(filepath.Join(systemManifestPath, file.Name()), false)
 		if err != nil {
 			return pods, err
 		}

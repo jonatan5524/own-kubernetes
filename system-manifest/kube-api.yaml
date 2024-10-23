@@ -1,6 +1,6 @@
 kind: Pod
 metadata:
-  name: kube-apiserver
+  name: kube-system
   namespace: apiserver
 spec:
   containers:

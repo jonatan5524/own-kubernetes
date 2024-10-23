@@ -29,7 +29,7 @@ const (
 	podRunningPhase                      = "Running"
 )
 
-func UpdatePodStatus(kubeAPIEndpoint string, podName string, podStatus kubeapi_rest.PodStatus) error {
+func UpdatePodStatus(kubeAPIEndpoint string, podName string, namespace string, podStatus kubeapi_rest.PodStatus) error {
 	log.Printf("update pod %s status for api", podName)
 
 	podStatusBytes, err := json.Marshal(podStatus)
@@ -38,8 +38,8 @@ func UpdatePodStatus(kubeAPIEndpoint string, podName string, podStatus kubeapi_r
 	}
 
 	req, err := http.NewRequest(
-		http.MethodPut,
-		fmt.Sprintf("%s/pods/status/%s", kubeAPIEndpoint, podName),
+		http.MethodPatch,
+		fmt.Sprintf("%s/namespaces/%s/pods/%s/status", kubeAPIEndpoint, namespace, podName),
 		bytes.NewBuffer(podStatusBytes),
 	)
 	if err != nil {
@@ -72,7 +72,7 @@ func UpdatePod(kubeAPIEndpoint string, pod kubeapi_rest.Pod) error {
 
 	req, err := http.NewRequest(
 		http.MethodPost,
-		fmt.Sprintf("%s/pods", kubeAPIEndpoint),
+		fmt.Sprintf("%s/namespaces/%s/pods", kubeAPIEndpoint, pod.Metadata.Namespace),
 		bytes.NewBuffer(podBytes),
 	)
 	if err != nil {
@@ -163,7 +163,7 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR strin
 			continue
 		}
 
-		if err := UpdatePodStatus(kubeAPIEndpoint, podRes.Metadata.Name, podRes.Status); err != nil {
+		if err := UpdatePodStatus(kubeAPIEndpoint, podRes.Metadata.Name, pod.Metadata.Namespace, podRes.Status); err != nil {
 			log.Printf("error updating pod status to api: %v", err)
 
 			continue

@@ -14,30 +14,34 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func ReadResource(file string, convertToJSON bool) ([]byte, string, error) {
+func ReadResource(file string, convertToJSON bool) ([]byte, string, string, error) {
 	var resourceData []byte
 
 	resourceData, err := os.ReadFile(file)
 	if err != nil {
-		return resourceData, "", err
+		return resourceData, "", "", err
 	}
 
 	var resource struct {
 		Kind string `json:"kind" yaml:"kind"`
+
+		Metadata struct {
+			Namespace string `json:"namespace" yaml:"namespace"`
+		} `json:"metadata" yaml:"metadata"`
 	}
 	err = yaml.Unmarshal(resourceData, &resource)
 	if err != nil {
-		return resourceData, "", fmt.Errorf("kind not found in yaml, %v", err)
+		return resourceData, "", "", fmt.Errorf("kind not found in yaml, %v", err)
 	}
 
 	if convertToJSON {
 		resourceData, err = convertYAMLtoJSON(resourceData)
 		if err != nil {
-			return resourceData, "", fmt.Errorf("invalid YAML, %v", err)
+			return resourceData, "", "", fmt.Errorf("invalid YAML, %v", err)
 		}
 	}
 
-	return resourceData, resource.Kind, nil
+	return resourceData, resource.Kind, resource.Metadata.Namespace, nil
 }
 
 func convertYAMLtoJSON(data []byte) ([]byte, error) {

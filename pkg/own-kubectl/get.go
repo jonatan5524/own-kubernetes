@@ -7,13 +7,18 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
 )
 
-const OutputFormatWide = "wide"
+const (
+	OutputFormatWide = "wide"
+	OutputFormatYAML = "yaml"
+	OutputFormatJSON = "json"
+)
 
 func PrintPodsInTableFormat(pods []rest.Pod, outputFormat string) {
 	w := tabwriter.NewWriter(os.Stdout, 10, 1, 5, ' ', 0)
@@ -115,7 +120,7 @@ func GetPods(namespace string) ([]rest.Pod, error) {
 	var pods []rest.Pod
 
 	resp, err := http.Get(
-		fmt.Sprintf("%s/pods", os.Getenv("KUBE_API_ENDPOINT")),
+		fmt.Sprintf("%s/namespaces/%s/pods", os.Getenv("KUBE_API_ENDPOINT"), namespace),
 	)
 	if err != nil {
 		return pods, err
@@ -123,6 +128,15 @@ func GetPods(namespace string) ([]rest.Pod, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return pods, fmt.Errorf("error reading response body: %v", err)
+		}
+
+		if strings.Contains(string(body), "key not found") {
+			return pods, nil
+		}
+
 		return pods, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
 	}
 

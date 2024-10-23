@@ -6,22 +6,20 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	restful "github.com/emicklei/go-restful/v3"
-	"github.com/google/uuid"
 	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/etcd"
 	kubeapi_logger "github.com/jonatan5524/own-kubernetes/pkg/kube-api/logger"
 	"github.com/tidwall/gjson"
 )
 
 const (
-	podEtcdKey                            = "/pod"
+	podEtcdKey                            = "/pods"
 	defaultNamespace                      = "default"
 	LastAppliedConfigurationAnnotationKey = "last-applied-configuration"
 )
 
-var etcdServiceApp etcd.EtcdService
+var etcdServiceAppPod etcd.EtcdService
 
 type Pod struct {
 	Metadata PodMetadata `json:"metadata" yaml:"metadata"`
@@ -77,7 +75,7 @@ type Container struct {
 func (pod *Pod) Register(etcdServersEndpoints string) {
 	log.Println("rest api pod register")
 
-	etcdServiceApp = etcd.NewEtcdService(etcdServersEndpoints)
+	etcdServiceAppPod = etcd.NewEtcdService(etcdServersEndpoints)
 
 	ws := new(restful.WebService)
 
@@ -91,47 +89,7 @@ func (pod *Pod) Register(etcdServersEndpoints string) {
 		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
-	ws.Route(ws.GET("/{name}").To(pod.get).
-		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
-
-	ws.Route(ws.POST("/").To(pod.create).
-		Param(ws.BodyParameter("Pod", "a Pod resource (JSON)").DataType("rest.Pod")))
-
-	ws.Route(ws.PUT("/status/{name}").To(pod.updateStatus).
-		Param(ws.BodyParameter("PodStatus", "a Pod status resource (JSON)").DataType("rest.PodStatus")))
-
-	ws.Route(ws.DELETE("/{name}").To(pod.delete).
-		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
-
 	restful.Add(ws)
-}
-
-func (pod *Pod) get(req *restful.Request, resp *restful.Response) {
-	name := req.PathParameter("name")
-	res, err := etcdServiceApp.GetResource(fmt.Sprintf("%s/%s", podEtcdKey, name))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	var podRes Pod
-	if err = json.Unmarshal(res, &podRes); err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = resp.WriteEntity(podRes)
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
-	}
 }
 
 func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
@@ -143,7 +101,7 @@ func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	resArr, err := etcdServiceApp.GetAllFromResource(podEtcdKey)
+	resArr, err := etcdServiceAppPod.GetAllFromResource(podEtcdKey)
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
@@ -187,7 +145,7 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 
-	watchChan, closeChanFunc, err := etcdServiceApp.GetWatchChannel(podEtcdKey)
+	watchChan, closeChanFunc, err := etcdServiceAppPod.GetWatchChannel(podEtcdKey)
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
@@ -229,163 +187,5 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 			log.Println("Connection closed")
 			return
 		}
-	}
-}
-
-func (pod *Pod) create(req *restful.Request, resp *restful.Response) {
-	newPod := new(Pod)
-	err := req.ReadEntity(newPod)
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	if pod.Metadata.Namespace == "" {
-		pod.Metadata.Namespace = defaultNamespace
-	}
-
-	if err = newPod.initLastAppliedConfigurations(); err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-	newPod.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
-
-	if newPod.Metadata.UID == "" {
-		newPod.Metadata.UID = uuid.NewString()
-	}
-
-	podBytes, err := json.Marshal(newPod)
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = etcdServiceApp.PutResource(fmt.Sprintf("%s/%s", podEtcdKey, newPod.Metadata.Name), string(podBytes))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = resp.WriteEntity("success")
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func (pod *Pod) initLastAppliedConfigurations() error {
-	podWithoutStatus := *pod
-	podWithoutStatus.Status = PodStatus{}
-	podWithoutStatus.Metadata.Annotations = make(map[string]string)
-	podWithoutStatus.Metadata.CreationTimestamp = ""
-	podWithoutStatus.Metadata.UID = ""
-
-	podBytes, err := json.Marshal(podWithoutStatus)
-	if err != nil {
-		return err
-	}
-
-	if pod.Metadata.Annotations == nil {
-		pod.Metadata.Annotations = make(map[string]string)
-	}
-
-	pod.Metadata.Annotations[LastAppliedConfigurationAnnotationKey] = string(podBytes)
-
-	return nil
-}
-
-func (pod *Pod) delete(req *restful.Request, resp *restful.Response) {
-	name := req.PathParameter("name")
-
-	err := etcdServiceApp.DeleteResource(fmt.Sprintf("%s/%s", podEtcdKey, name))
-	if err != nil {
-		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = resp.WriteEntity("success")
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func (pod *Pod) updateStatus(req *restful.Request, resp *restful.Response) {
-	name := req.PathParameter("name")
-
-	res, err := etcdServiceApp.GetResource(fmt.Sprintf("%s/%s", podEtcdKey, name))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	var podRes Pod
-	if err = json.Unmarshal(res, &podRes); err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	newPodStatus := new(PodStatus)
-	err = req.ReadEntity(newPodStatus)
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	podRes.Status = *newPodStatus
-
-	podResBytes, err := json.Marshal(podRes)
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = etcdServiceApp.PutResource(fmt.Sprintf("%s/%s", podEtcdKey, name), string(podResBytes))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = resp.WriteEntity("success")
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
 	}
 }
