@@ -67,10 +67,57 @@ var getPodsCmd = &cobra.Command{
 	},
 }
 
+var getNamespacesCmd = &cobra.Command{
+	Use:   "namespaces",
+	Short: "namespaces",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		namespaces, err := ownkubectl.GetNamespaces()
+		if err != nil {
+			return err
+		}
+
+		if len(namespaces) == 0 {
+			fmt.Printf("No resource found\n")
+
+			return nil
+		}
+
+		outputFormat, err := cmd.Flags().GetString(outputFlag)
+		if err != nil {
+			return err
+		}
+
+		if outputFormat == ownkubectl.OutputFormatJSON {
+			namespacesJSONBytes, err := json.MarshalIndent(namespaces, "", " ")
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("%s\n", string(namespacesJSONBytes))
+		} else if outputFormat == ownkubectl.OutputFormatYAML {
+			namespacesYAMLBytes, err := yaml.Marshal(namespaces)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("%s\n", string(namespacesYAMLBytes))
+		} else {
+			ownkubectl.PrintNamespacesInTableFormat(namespaces)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(getCmd)
+
 	getCmd.AddCommand(getPodsCmd)
-	getPodsCmd.Flags().StringP(namespaceFlag, "n", defaultNamespace, "pod's namespace")
 	getPodsCmd.Flags().StringP(outputFlag, "o", "",
+		fmt.Sprintf("output format: %s, %s, %s", ownkubectl.OutputFormatWide, ownkubectl.OutputFormatYAML, ownkubectl.OutputFormatJSON))
+	getPodsCmd.Flags().StringP(namespaceFlag, "n", defaultNamespace, "pod's namespace")
+
+	getCmd.AddCommand(getNamespacesCmd)
+	getNamespacesCmd.Flags().StringP(outputFlag, "o", "",
 		fmt.Sprintf("output format: %s, %s, %s", ownkubectl.OutputFormatWide, ownkubectl.OutputFormatYAML, ownkubectl.OutputFormatJSON))
 }

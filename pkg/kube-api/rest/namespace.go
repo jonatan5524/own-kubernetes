@@ -15,7 +15,12 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var etcdServiceAppNamespace etcd.EtcdService
+const namespaceEtcdKey = "/namespaces"
+
+var (
+	setupNamespaces         = [...]string{"default", "kube-system"}
+	etcdServiceAppNamespace etcd.EtcdService
+)
 
 type Namespace struct {
 	Metadata NamespaceMetadata `json:"metadata" yaml:"metadata"`
@@ -26,7 +31,6 @@ type Namespace struct {
 type NamespaceMetadata struct {
 	Annotations       map[string]string `json:"annotations" yaml:"annotations"`
 	Name              string            `json:"name" yaml:"name"`
-	Namespace         string            `json:"namespace" yaml:"namespace"`
 	CreationTimestamp string            `json:"creationTimestamp" yaml:"creationTimestamp"`
 	UID               string            `json:"uid" yaml:"uid"`
 }
@@ -44,25 +48,80 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
-	ws.Route(ws.GET("/{namespace}/pods").To(namespace.getPods).
+	ws.Route(ws.GET("/").To(namespace.getNamespaces))
+
+	ws.Route(ws.POST("/").To(namespace.createNamespace).
+		Param(ws.BodyParameter("Pod", "a Namespace resource (JSON)").DataType("rest.Namespace")))
+
+	ws.Route(ws.GET("/{namespace}/pods").To(namespace.getPods).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
-	ws.Route(ws.GET("/{namespace}/pods/{name}").To(namespace.getPod).
+	ws.Route(ws.GET("/{namespace}/pods/{name}").To(namespace.getPod).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
 
-	ws.Route(ws.POST("/{namespace}/pods").To(namespace.createPod).
+	ws.Route(ws.POST("/{namespace}/pods").To(namespace.createPod).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.BodyParameter("Pod", "a Pod resource (JSON)").DataType("rest.Pod")))
 
-	ws.Route(ws.PATCH("/{namespace}/pods/{name}/status").To(namespace.updateStatus).
+	ws.Route(ws.PATCH("/{namespace}/pods/{name}/status").To(namespace.updateStatus).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.BodyParameter("PodStatus", "a Pod status resource (JSON)").DataType("rest.PodStatus")))
 
 	restful.Add(ws)
+
+	setupDefaultNamespaces()
+}
+
+func setupDefaultNamespaces() {
+	log.Printf("creating setup namespaces %v", setupNamespaces)
+
+	for _, namespaceName := range setupNamespaces {
+		namespace := Namespace{
+			Kind: "Namespace",
+			Metadata: NamespaceMetadata{
+				CreationTimestamp: time.Now().Format(time.RFC3339),
+				Name:              namespaceName,
+				UID:               uuid.NewString(),
+			},
+		}
+
+		namespaceBytes, err := json.Marshal(namespace)
+		if err != nil {
+			panic("unable to create setup namespaces")
+		}
+
+		err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s", namespaceEtcdKey, namespaceName), string(namespaceBytes))
+		if err != nil {
+			panic("unable to create setup namespaces")
+		}
+	}
+}
+
+func validateNamespaceExists(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
+	namespaceQuery := req.PathParameter("namespace")
+	log.Printf("validating namespace exists %s", namespaceQuery)
+
+	_, err := etcdServiceAppNamespace.GetResource(fmt.Sprintf("%s/%s", namespaceEtcdKey, namespaceQuery))
+	if err != nil {
+		if strings.Contains(err.Error(), "key not found") {
+			err = resp.WriteErrorString(http.StatusBadRequest, "namespace not exists")
+			if err != nil {
+				log.Printf("Error while sending error message: %v", err)
+			}
+
+			return
+		}
+
+		log.Printf("Error while getting namespace from etcd: %v", err)
+
+		return
+	}
+
+	chain.ProcessFilter(req, resp)
 }
 
 func (namespace *Namespace) getPods(req *restful.Request, resp *restful.Response) {
@@ -77,6 +136,15 @@ func (namespace *Namespace) getPods(req *restful.Request, resp *restful.Response
 	namespaceQuery := req.PathParameter("namespace")
 	resArr, err := etcdServiceAppNamespace.GetAllFromResource(fmt.Sprintf("%s/%s", podEtcdKey, namespaceQuery))
 	if err != nil {
+		if strings.Contains(err.Error(), "key not found") {
+			err = resp.WriteEntity([]Pod{})
+			if err != nil {
+				resp.WriteError(http.StatusInternalServerError, err)
+			}
+
+			return
+		}
+
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
 			resp.WriteError(http.StatusInternalServerError, err)
@@ -321,6 +389,82 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 	}
 
 	err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s/%s", podEtcdKey, namespaceQuery, name), string(podResBytes))
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	err = resp.WriteEntity("success")
+	if err != nil {
+		resp.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func (namespace *Namespace) getNamespaces(_ *restful.Request, resp *restful.Response) {
+	resArr, err := etcdServiceAppNamespace.GetAllFromResource(namespaceEtcdKey)
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	var namespacesResArr []Namespace
+	for _, res := range resArr {
+		var namespaceRes Namespace
+		if err = json.Unmarshal(res, &namespaceRes); err != nil {
+			err = resp.WriteError(http.StatusBadRequest, err)
+			if err != nil {
+				resp.WriteError(http.StatusInternalServerError, err)
+			}
+
+			return
+		}
+
+		namespacesResArr = append(namespacesResArr, namespaceRes)
+	}
+
+	err = resp.WriteEntity(namespacesResArr)
+	if err != nil {
+		resp.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func (namespace *Namespace) createNamespace(req *restful.Request, resp *restful.Response) {
+	newNamespace := new(Namespace)
+	err := req.ReadEntity(newNamespace)
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	newNamespace.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
+
+	if newNamespace.Metadata.UID == "" {
+		newNamespace.Metadata.UID = uuid.NewString()
+	}
+
+	namespaceBytes, err := json.Marshal(newNamespace)
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s", namespaceEtcdKey, newNamespace.Metadata.Name), string(namespaceBytes))
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {

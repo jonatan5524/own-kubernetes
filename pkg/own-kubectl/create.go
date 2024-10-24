@@ -18,18 +18,29 @@ func CreateResource(file string) error {
 		return err
 	}
 
-	if namespace == "" {
-		namespace = "default"
+	var resp *http.Response
+	if kind == "Namespace" {
+		resp, err = http.Post(
+			fmt.Sprintf("%s/namespaces", os.Getenv("KUBE_API_ENDPOINT")),
+			"application/json",
+			bytes.NewReader(data),
+		)
+	} else {
+		if namespace == "" {
+			namespace = "default"
+		}
+
+		resp, err = http.Post(
+			fmt.Sprintf("%s/namespaces/%s/%ss", os.Getenv("KUBE_API_ENDPOINT"), namespace, strings.ToLower(kind)),
+			"application/json",
+			bytes.NewReader(data),
+		)
 	}
 
-	resp, err := http.Post(
-		fmt.Sprintf("%s/namespaces/%s/%ss", os.Getenv("KUBE_API_ENDPOINT"), namespace, strings.ToLower(kind)),
-		"application/json",
-		bytes.NewReader(data),
-	)
 	if err != nil {
 		return err
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -38,7 +49,7 @@ func CreateResource(file string) error {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("error from api: %s %s", resp.Status, string(body))
+		return fmt.Errorf("error from api: %s %s", resp.Status, string(body))
 	}
 
 	return nil

@@ -53,6 +53,21 @@ func PrintPodsInTableFormat(pods []rest.Pod, outputFormat string) {
 	w.Flush()
 }
 
+func PrintNamespacesInTableFormat(namespaces []rest.Namespace) {
+	w := tabwriter.NewWriter(os.Stdout, 10, 1, 5, ' ', 0)
+	fmt.Fprintln(w, "NAME\tSTATUS\tAGE")
+
+	for _, namespace := range namespaces {
+		fmt.Fprintf(w, "%s\t%s\t%s\n",
+			namespace.Metadata.Name,
+			"Not yet supported",
+			getAge(namespace.Metadata.CreationTimestamp),
+		)
+	}
+
+	w.Flush()
+}
+
 func getAge(timeStampStr string) string {
 	now := time.Now()
 	timeStamp, err := time.Parse(time.RFC3339, timeStampStr)
@@ -100,7 +115,12 @@ func GetAllPods() ([]rest.Pod, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return pods, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return pods, fmt.Errorf("error reading response body: %v", err)
+		}
+
+		return pods, fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -151,4 +171,41 @@ func GetPods(namespace string) ([]rest.Pod, error) {
 	}
 
 	return pods, nil
+}
+
+func GetNamespaces() ([]rest.Namespace, error) {
+	var namespaces []rest.Namespace
+
+	resp, err := http.Get(
+		fmt.Sprintf("%s/namespaces", os.Getenv("KUBE_API_ENDPOINT")),
+	)
+	if err != nil {
+		return namespaces, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return namespaces, fmt.Errorf("error reading response body: %v", err)
+		}
+
+		if strings.Contains(string(body), "key not found") {
+			return namespaces, nil
+		}
+
+		return namespaces, fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return namespaces, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	err = json.Unmarshal(body, &namespaces)
+	if err != nil {
+		return namespaces, fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+
+	return namespaces, nil
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"reflect"
@@ -56,7 +57,12 @@ func UpdatePodStatus(kubeAPIEndpoint string, podName string, namespace string, p
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status code not success from kube api server")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error reading response body: %v", err)
+		}
+
+		return fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -89,7 +95,12 @@ func UpdatePod(kubeAPIEndpoint string, pod kubeapi_rest.Pod) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status code not success from kube api server")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error reading response body: %v", err)
+		}
+
+		return fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -110,7 +121,12 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR strin
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status code not success from kube api server")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error reading response body: %v", err)
+		}
+
+		return fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
 	}
 
 	reader := bufio.NewReader(resp.Body)
