@@ -14,95 +14,65 @@ import (
 )
 
 const (
-	podEtcdKey                            = "/pods"
-	defaultNamespace                      = "default"
-	LastAppliedConfigurationAnnotationKey = "last-applied-configuration"
+	serviceEtcdKey = "/services/specs"
 )
 
-var etcdServiceAppPod etcd.EtcdService
+var etcdServiceAppService etcd.EtcdService
 
-type Pod struct {
-	Metadata PodMetadata `json:"metadata" yaml:"metadata"`
+type Service struct {
+	Metadata ServiceMetadata `json:"metadata" yaml:"metadata"`
 
 	Kind string `json:"kind" yaml:"kind"`
 
-	Status PodStatus `json:"status" yaml:"status"`
-
 	Spec struct {
-		NodeName    string      `json:"nodeName" yaml:"nodeName"`
-		Containers  []Container `json:"containers" yaml:"containers"`
-		HostNetwork bool        `json:"hostNetwork" yaml:"hostNetwork"`
+		Type      string `json:"type" yaml:"type"`
+		ClusterIP string `json:"clusterIP" yaml:"clusterIP"`
+		Ports     []struct {
+			Name       string `json:"name" yaml:"name"`
+			Protocol   string `json:"protocol" yaml:"protocol"`
+			Port       int    `json:"port" yaml:"port"`
+			TargetPort int    `json:"targetPort" yaml:"targetPort"`
+		} `json:"ports" yaml:"ports"`
 	} `json:"spec" yaml:"spec"`
 }
 
-type PodStatus struct {
-	PodIP             string            `json:"podIP" yaml:"podIP"`
-	Phase             string            `json:"phase" yaml:"phase"`
-	ContainerStatuses []ContainerStatus `json:"containerStatuses" yaml:"containerStatuses"`
-}
-
-type PodMetadata struct {
+type ServiceMetadata struct {
 	Annotations       map[string]string `json:"annotations" yaml:"annotations"`
-	Labels            map[string]string `json:"labels" yaml:"labels"`
 	Name              string            `json:"name" yaml:"name"`
 	Namespace         string            `json:"namespace" yaml:"namespace"`
 	CreationTimestamp string            `json:"creationTimestamp" yaml:"creationTimestamp"`
 	UID               string            `json:"uid" yaml:"uid"`
 }
 
-type ContainerStatus struct {
-	ContainerID string `json:"containerID" yaml:"containerID"`
-	Image       string `json:"image" yaml:"image"`
-	Name        string `json:"name" yaml:"name"`
-}
+func (service *Service) Register(etcdServersEndpoints string) {
+	log.Println("rest api service register")
 
-type Container struct {
-	Name  string `json:"name" yaml:"name"`
-	Image string `json:"image" yaml:"image"`
-
-	Command []string `json:"command" yaml:"command"`
-	Args    []string `json:"args" yaml:"args"`
-
-	Ports []struct {
-		ContainerPort int `json:"containerPort" yaml:"containerPort"`
-	} `json:"ports" yaml:"ports"`
-
-	Env []struct {
-		Name  string `json:"name" yaml:"name"`
-		Value string `json:"value" yaml:"value"`
-	} `json:"env" yaml:"env"`
-}
-
-func (pod *Pod) Register(etcdServersEndpoints string) {
-	log.Println("rest api pod register")
-
-	etcdServiceAppPod = etcd.NewEtcdService(etcdServersEndpoints)
+	etcdServiceAppService = etcd.NewEtcdService(etcdServersEndpoints)
 
 	ws := new(restful.WebService)
 
 	ws.Filter(kubeapi_logger.LoggerMiddleware)
 
-	ws.Path("/pods").
+	ws.Path("/services").
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
-	ws.Route(ws.GET("/").To(pod.getAll).
+	ws.Route(ws.GET("/").To(service.getAll).
 		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
-
 	restful.Add(ws)
 }
 
-func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
+func (service *Service) getAll(req *restful.Request, resp *restful.Response) {
 	watchQuery := req.QueryParameter("watch")
 
 	if watchQuery == "true" {
-		pod.watcher(req, resp)
+		service.watcher(req, resp)
 
 		return
 	}
 
-	resArr, err := etcdServiceAppPod.GetAllFromResource(podEtcdKey)
+	resArr, err := etcdServiceAppService.GetAllFromResource(serviceEtcdKey)
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
@@ -112,10 +82,10 @@ func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	podsRes := make([]Pod, len(resArr))
+	servicesRes := make([]Service, len(resArr))
 	for index, res := range resArr {
-		var pod Pod
-		if err = json.Unmarshal(res, &pod); err != nil {
+		var service Service
+		if err = json.Unmarshal(res, &service); err != nil {
 			err = resp.WriteError(http.StatusBadRequest, err)
 			if err != nil {
 				resp.WriteError(http.StatusInternalServerError, err)
@@ -124,16 +94,16 @@ func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
 			return
 		}
 
-		podsRes[index] = pod
+		servicesRes[index] = service
 	}
 
-	err = resp.WriteEntity(podsRes)
+	err = resp.WriteEntity(servicesRes)
 	if err != nil {
 		resp.WriteError(http.StatusInternalServerError, err)
 	}
 }
 
-func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
+func (service *Service) watcher(req *restful.Request, resp *restful.Response) {
 	watchQuery := req.QueryParameter("watch")
 	fieldSelector := req.QueryParameter("fieldSelector")
 
@@ -146,7 +116,7 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 
-	watchChan, closeChanFunc, err := etcdServiceAppPod.GetWatchChannel(podEtcdKey)
+	watchChan, closeChanFunc, err := etcdServiceAppService.GetWatchChannel(serviceEtcdKey)
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
@@ -158,7 +128,7 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 	defer closeChanFunc()
 	defer resp.CloseNotify()
 
-	log.Println("Client pod watcher started")
+	log.Println("Client service watcher started")
 
 	for {
 		select {

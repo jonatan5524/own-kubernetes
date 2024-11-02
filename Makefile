@@ -43,7 +43,7 @@ start-node:
 	scp -i ./vms/.ssh/id_rsa ./system-manifest/* user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}'):/home/user/kubernetes/manifests
 
 ssh-node:
- 	# echo "for starting kubelet: sudo ./kubelet --kubernetes-api-endpoint 'http://localhost:8080'"
+ 	# @echo for starting kubelet: sudo ./kubelet --kubernetes-api-endpoint \'http://localhost:8080\'
 	ssh -i ./vms/.ssh/id_rsa user@$$(arp | grep -i DE:AD:BE:EF:E0:00 | awk '{print $$1}')
 
 stop-node:

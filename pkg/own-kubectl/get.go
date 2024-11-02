@@ -53,6 +53,40 @@ func PrintPodsInTableFormat(pods []rest.Pod, outputFormat string) {
 	w.Flush()
 }
 
+func PrintServicesInTableFormat(services []rest.Service, outputFormat string) {
+	w := tabwriter.NewWriter(os.Stdout, 10, 1, 5, ' ', 0)
+	if outputFormat == "" {
+		fmt.Fprintln(w, "NAME\tTYPE\tCLUSTER-IP\tEXTERNAL-IP\tPORT(S)\tAGE")
+	} else if outputFormat == OutputFormatWide {
+		fmt.Fprintln(w, "NAME\tTYPE\tCLUSTER-IP\tEXTERNAL-IP\tPORT(S)\tAGE\tSELECTOR")
+	}
+
+	for _, service := range services {
+		if outputFormat == "" {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				service.Metadata.Name,
+				service.Spec.Type,
+				service.Spec.ClusterIP,
+				"Not yet supported",
+				getFormattedPorts(service),
+				getAge(service.Metadata.CreationTimestamp),
+			)
+		} else if outputFormat == OutputFormatWide {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				service.Metadata.Name,
+				service.Spec.Type,
+				service.Spec.ClusterIP,
+				"Not yet supported",
+				getFormattedPorts(service),
+				getAge(service.Metadata.CreationTimestamp),
+				"Not yet supported",
+			)
+		}
+	}
+
+	w.Flush()
+}
+
 func PrintNamespacesInTableFormat(namespaces []rest.Namespace) {
 	w := tabwriter.NewWriter(os.Stdout, 10, 1, 5, ' ', 0)
 	fmt.Fprintln(w, "NAME\tSTATUS\tAGE")
@@ -66,6 +100,16 @@ func PrintNamespacesInTableFormat(namespaces []rest.Namespace) {
 	}
 
 	w.Flush()
+}
+
+func getFormattedPorts(service rest.Service) string {
+	ports := ""
+
+	for _, portSpec := range service.Spec.Ports {
+		ports += fmt.Sprintf("%d/%s,", portSpec.Port, portSpec.Protocol)
+	}
+
+	return ports[:len(ports)-1]
 }
 
 func getAge(timeStampStr string) string {
@@ -208,4 +252,41 @@ func GetNamespaces() ([]rest.Namespace, error) {
 	}
 
 	return namespaces, nil
+}
+
+func GetServices(namespace string) ([]rest.Service, error) {
+	var services []rest.Service
+
+	resp, err := http.Get(
+		fmt.Sprintf("%s/namespaces/%s/services", os.Getenv("KUBE_API_ENDPOINT"), namespace),
+	)
+	if err != nil {
+		return services, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return services, fmt.Errorf("error reading response body: %v", err)
+		}
+
+		if strings.Contains(string(body), "key not found") {
+			return services, nil
+		}
+
+		return services, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return services, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	err = json.Unmarshal(body, &services)
+	if err != nil {
+		return services, fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+
+	return services, nil
 }

@@ -51,12 +51,17 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 	ws.Route(ws.GET("/").To(namespace.getNamespaces))
 
 	ws.Route(ws.POST("/").To(namespace.createNamespace).
-		Param(ws.BodyParameter("Pod", "a Namespace resource (JSON)").DataType("rest.Namespace")))
+		Param(ws.BodyParameter("Namespace", "a Namespace resource (JSON)").DataType("rest.Namespace")))
 
 	ws.Route(ws.GET("/{namespace}/pods").To(namespace.getPods).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
+
+	ws.Route(ws.GET("/{namespace}/services").To(namespace.getServices).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")))
+	// Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
+	// Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
 	ws.Route(ws.GET("/{namespace}/pods/{name}").To(namespace.getPod).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
@@ -65,6 +70,10 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 	ws.Route(ws.POST("/{namespace}/pods").To(namespace.createPod).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.BodyParameter("Pod", "a Pod resource (JSON)").DataType("rest.Pod")))
+
+	ws.Route(ws.POST("/{namespace}/services").To(namespace.createService).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.BodyParameter("Service", "a Service resource (JSON)").DataType("rest.Service")))
 
 	ws.Route(ws.PATCH("/{namespace}/pods/{name}/status").To(namespace.updateStatus).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")).
@@ -415,8 +424,8 @@ func (namespace *Namespace) getNamespaces(_ *restful.Request, resp *restful.Resp
 		return
 	}
 
-	var namespacesResArr []Namespace
-	for _, res := range resArr {
+	namespacesResArr := make([]Namespace, len(resArr))
+	for index, res := range resArr {
 		var namespaceRes Namespace
 		if err = json.Unmarshal(res, &namespaceRes); err != nil {
 			err = resp.WriteError(http.StatusBadRequest, err)
@@ -427,7 +436,7 @@ func (namespace *Namespace) getNamespaces(_ *restful.Request, resp *restful.Resp
 			return
 		}
 
-		namespacesResArr = append(namespacesResArr, namespaceRes)
+		namespacesResArr[index] = namespaceRes
 	}
 
 	err = resp.WriteEntity(namespacesResArr)
@@ -475,6 +484,100 @@ func (namespace *Namespace) createNamespace(req *restful.Request, resp *restful.
 	}
 
 	err = resp.WriteEntity("success")
+	if err != nil {
+		resp.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func (namespace *Namespace) createService(req *restful.Request, resp *restful.Response) {
+	newService := new(Service)
+	err := req.ReadEntity(newService)
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	newService.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
+
+	if newService.Metadata.UID == "" {
+		newService.Metadata.UID = uuid.NewString()
+	}
+
+	serviceBytes, err := json.Marshal(newService)
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s/%s", serviceEtcdKey, newService.Metadata.Namespace, newService.Metadata.Name), string(serviceBytes))
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	err = resp.WriteEntity("success")
+	if err != nil {
+		resp.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func (namespace *Namespace) getServices(req *restful.Request, resp *restful.Response) {
+	// watchQuery := req.QueryParameter("watch")
+
+	// if watchQuery == "true" {
+	// 	namespace.watcher(req, resp)
+
+	// 	return
+	// }
+
+	namespaceQuery := req.PathParameter("namespace")
+	resArr, err := etcdServiceAppNamespace.GetAllFromResource(fmt.Sprintf("%s/%s", serviceEtcdKey, namespaceQuery))
+	if err != nil {
+		if strings.Contains(err.Error(), "key not found") {
+			err = resp.WriteEntity([]Pod{})
+			if err != nil {
+				resp.WriteError(http.StatusInternalServerError, err)
+			}
+
+			return
+		}
+
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			resp.WriteError(http.StatusInternalServerError, err)
+		}
+
+		return
+	}
+
+	var servicesRes []Service
+	for _, res := range resArr {
+		var service Service
+		if err = json.Unmarshal(res, &service); err != nil {
+			err = resp.WriteError(http.StatusBadRequest, err)
+			if err != nil {
+				resp.WriteError(http.StatusInternalServerError, err)
+			}
+
+			return
+		}
+
+		servicesRes = append(servicesRes, service)
+	}
+
+	err = resp.WriteEntity(servicesRes)
 	if err != nil {
 		resp.WriteError(http.StatusInternalServerError, err)
 	}
