@@ -23,16 +23,9 @@ var (
 )
 
 type Namespace struct {
-	Metadata NamespaceMetadata `json:"metadata" yaml:"metadata"`
+	Metadata ResourceMetadata `json:"metadata" yaml:"metadata"`
 
 	Kind string `json:"kind" yaml:"kind"`
-}
-
-type NamespaceMetadata struct {
-	Annotations       map[string]string `json:"annotations" yaml:"annotations"`
-	Name              string            `json:"name" yaml:"name"`
-	CreationTimestamp string            `json:"creationTimestamp" yaml:"creationTimestamp"`
-	UID               string            `json:"uid" yaml:"uid"`
 }
 
 func (namespace *Namespace) Register(etcdServersEndpoints string) {
@@ -59,13 +52,17 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
 	ws.Route(ws.GET("/{namespace}/services").To(namespace.getServices).Filter(validateNamespaceExists).
-		Param(ws.PathParameter("namespace", "namespace").DataType("string")))
-	// Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
-	// Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
+		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
 	ws.Route(ws.GET("/{namespace}/pods/{name}").To(namespace.getPod).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
+
+	ws.Route(ws.GET("/{namespace}/services/{name}").To(namespace.getService).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.PathParameter("name", "name of the service").DataType("string")))
 
 	ws.Route(ws.POST("/{namespace}/pods").To(namespace.createPod).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
@@ -91,7 +88,7 @@ func setupDefaultNamespaces() {
 	for _, namespaceName := range setupNamespaces {
 		namespace := Namespace{
 			Kind: "Namespace",
-			Metadata: NamespaceMetadata{
+			Metadata: ResourceMetadata{
 				CreationTimestamp: time.Now().Format(time.RFC3339),
 				Name:              namespaceName,
 				UID:               uuid.NewString(),
@@ -133,22 +130,22 @@ func validateNamespaceExists(req *restful.Request, resp *restful.Response, chain
 	chain.ProcessFilter(req, resp)
 }
 
-func (namespace *Namespace) getPods(req *restful.Request, resp *restful.Response) {
+func (namespace *Namespace) getAllResourceInNamespace(req *restful.Request, resp *restful.Response, etcdKey string) {
 	watchQuery := req.QueryParameter("watch")
 
 	if watchQuery == "true" {
-		namespace.watcher(req, resp)
+		namespace.watcher(req, resp, etcdKey)
 
 		return
 	}
 
 	namespaceQuery := req.PathParameter("namespace")
-	resArr, err := etcdServiceAppNamespace.GetAllFromResource(fmt.Sprintf("%s/%s", podEtcdKey, namespaceQuery))
+	resArr, err := etcdServiceAppNamespace.GetAllFromResource(fmt.Sprintf("%s/%s", etcdKey, namespaceQuery))
 	if err != nil {
 		if strings.Contains(err.Error(), "key not found") {
 			err = resp.WriteEntity([]Pod{})
 			if err != nil {
-				resp.WriteError(http.StatusInternalServerError, err)
+				fmt.Printf("error while sending error: %v", err)
 			}
 
 			return
@@ -156,52 +153,77 @@ func (namespace *Namespace) getPods(req *restful.Request, resp *restful.Response
 
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
 	}
 
-	var podsRes []Pod
-	for _, res := range resArr {
-		var pod Pod
-		if err = json.Unmarshal(res, &pod); err != nil {
+	resourcesArr := make([]interface{}, len(resArr))
+	for index, res := range resArr {
+		var resource interface{}
+		if err = json.Unmarshal(res, &resource); err != nil {
 			err = resp.WriteError(http.StatusBadRequest, err)
 			if err != nil {
-				resp.WriteError(http.StatusInternalServerError, err)
+				fmt.Printf("error while sending error: %v", err)
 			}
 
 			return
 		}
 
-		podsRes = append(podsRes, pod)
+		resourcesArr[index] = resource
 	}
 
-	err = resp.WriteEntity(podsRes)
+	err = resp.WriteEntity(resourcesArr)
 	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
+		fmt.Printf("error while sending error: %v", err)
 	}
 }
 
-func (namespace *Namespace) watcher(req *restful.Request, resp *restful.Response) {
-	watchQuery := req.QueryParameter("watch")
-	fieldSelector := req.QueryParameter("fieldSelector")
+func (namespace *Namespace) getSingleResourceInNamespace(req *restful.Request, resp *restful.Response, etcdKey string) {
+	name := req.PathParameter("name")
 	namespaceQuery := req.PathParameter("namespace")
 
-	if watchQuery != "true" {
+	res, err := etcdServiceAppNamespace.GetResource(fmt.Sprintf("%s/%s/%s", etcdKey, namespaceQuery, name))
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
 		return
 	}
+
+	var resource interface{}
+	if err = json.Unmarshal(res, &resource); err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
+		return
+	}
+
+	err = resp.WriteEntity(resource)
+	if err != nil {
+		fmt.Printf("error while sending error: %v", err)
+	}
+}
+
+func (namespace *Namespace) watcher(req *restful.Request, resp *restful.Response, etcdKey string) {
+	fieldSelector := req.QueryParameter("fieldSelector")
+	namespaceQuery := req.PathParameter("namespace")
 
 	resp.Header().Set("Access-Control-Allow-Origin", "*")
 	resp.Header().Set("Content-Type", "text/event-stream")
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 
-	watchChan, closeChanFunc, err := etcdServiceAppNamespace.GetWatchChannel(fmt.Sprintf("%s/%s", podEtcdKey, namespaceQuery))
+	watchChan, closeChanFunc, err := etcdServiceAppNamespace.GetWatchChannel(fmt.Sprintf("%s/%s", etcdKey, namespaceQuery))
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -215,7 +237,7 @@ func (namespace *Namespace) watcher(req *restful.Request, resp *restful.Response
 		select {
 		case watchResp := <-watchChan:
 			if watchResp.Err() != nil {
-				resp.WriteError(http.StatusInternalServerError, err)
+				fmt.Printf("error while sending error: %v", err)
 			}
 
 			for _, event := range watchResp.Events {
@@ -242,82 +264,48 @@ func (namespace *Namespace) watcher(req *restful.Request, resp *restful.Response
 	}
 }
 
-func (namespace *Namespace) getPod(req *restful.Request, resp *restful.Response) {
-	name := req.PathParameter("name")
+func (namespace *Namespace) createResourceInNamespace(req *restful.Request, resp *restful.Response, etcdKey string, resource interface{}) {
 	namespaceQuery := req.PathParameter("namespace")
 
-	res, err := etcdServiceAppNamespace.GetResource(fmt.Sprintf("%s/%s/%s", podEtcdKey, namespaceQuery, name))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
+	type GenericResource struct {
+		Metadata ResourceMetadata
+	}
+
+	resourceStruct, ok := resource.(GenericResource)
+	if !ok {
+		err := resp.WriteError(http.StatusBadRequest, fmt.Errorf("error converting resource"))
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
 	}
 
-	var podRes Pod
-	if err = json.Unmarshal(res, &podRes); err != nil {
+	if resourceStruct.Metadata.Namespace == "" {
+		resourceStruct.Metadata.Namespace = namespaceQuery
+	}
+
+	resourceStruct.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
+
+	if resourceStruct.Metadata.UID == "" {
+		resourceStruct.Metadata.UID = uuid.NewString()
+	}
+
+	podBytes, err := json.Marshal(resourceStruct)
+	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
 	}
 
-	err = resp.WriteEntity(podRes)
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func (namespace *Namespace) createPod(req *restful.Request, resp *restful.Response) {
-	namespaceQuery := req.PathParameter("namespace")
-	newPod := new(Pod)
-	err := req.ReadEntity(newPod)
+	err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s/%s", podEtcdKey, resourceStruct.Metadata.Namespace, resourceStruct.Metadata.Name), string(podBytes))
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	if newPod.Metadata.Namespace == "" {
-		newPod.Metadata.Namespace = namespaceQuery
-	}
-
-	if err = newPod.initLastAppliedConfigurations(); err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-	newPod.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
-
-	if newPod.Metadata.UID == "" {
-		newPod.Metadata.UID = uuid.NewString()
-	}
-
-	podBytes, err := json.Marshal(newPod)
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s/%s", podEtcdKey, newPod.Metadata.Namespace, newPod.Metadata.Name), string(podBytes))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -325,29 +313,40 @@ func (namespace *Namespace) createPod(req *restful.Request, resp *restful.Respon
 
 	err = resp.WriteEntity("success")
 	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
+		fmt.Printf("error while sending error: %v", err)
 	}
 }
 
-func (pod *Pod) initLastAppliedConfigurations() error {
-	podWithoutStatus := *pod
-	podWithoutStatus.Status = PodStatus{}
-	podWithoutStatus.Metadata.Annotations = make(map[string]string)
-	podWithoutStatus.Metadata.CreationTimestamp = ""
-	podWithoutStatus.Metadata.UID = ""
+func (namespace *Namespace) getPods(req *restful.Request, resp *restful.Response) {
+	namespace.getAllResourceInNamespace(req, resp, podEtcdKey)
+}
 
-	podBytes, err := json.Marshal(podWithoutStatus)
+func (namespace *Namespace) getPod(req *restful.Request, resp *restful.Response) {
+	namespace.getSingleResourceInNamespace(req, resp, podEtcdKey)
+}
+
+func (namespace *Namespace) createPod(req *restful.Request, resp *restful.Response) {
+	newPod := new(Pod)
+	err := req.ReadEntity(newPod)
 	if err != nil {
-		return err
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
+		return
 	}
 
-	if pod.Metadata.Annotations == nil {
-		pod.Metadata.Annotations = make(map[string]string)
+	if err = newPod.initLastAppliedConfigurations(); err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
+		return
 	}
 
-	pod.Metadata.Annotations[LastAppliedConfigurationAnnotationKey] = string(podBytes)
-
-	return nil
+	namespace.createResourceInNamespace(req, resp, podEtcdKey, newPod)
 }
 
 func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Response) {
@@ -358,7 +357,7 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -368,7 +367,7 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 	if err = json.Unmarshal(res, &podRes); err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -379,7 +378,7 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -391,7 +390,7 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -401,7 +400,7 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -409,7 +408,7 @@ func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Res
 
 	err = resp.WriteEntity("success")
 	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
+		fmt.Printf("error while sending error: %v", err)
 	}
 }
 
@@ -418,7 +417,7 @@ func (namespace *Namespace) getNamespaces(_ *restful.Request, resp *restful.Resp
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -430,7 +429,7 @@ func (namespace *Namespace) getNamespaces(_ *restful.Request, resp *restful.Resp
 		if err = json.Unmarshal(res, &namespaceRes); err != nil {
 			err = resp.WriteError(http.StatusBadRequest, err)
 			if err != nil {
-				resp.WriteError(http.StatusInternalServerError, err)
+				fmt.Printf("error while sending error: %v", err)
 			}
 
 			return
@@ -441,7 +440,7 @@ func (namespace *Namespace) getNamespaces(_ *restful.Request, resp *restful.Resp
 
 	err = resp.WriteEntity(namespacesResArr)
 	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
+		fmt.Printf("error while sending error: %v", err)
 	}
 }
 
@@ -451,7 +450,7 @@ func (namespace *Namespace) createNamespace(req *restful.Request, resp *restful.
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -467,7 +466,7 @@ func (namespace *Namespace) createNamespace(req *restful.Request, resp *restful.
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -477,7 +476,7 @@ func (namespace *Namespace) createNamespace(req *restful.Request, resp *restful.
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
@@ -485,7 +484,7 @@ func (namespace *Namespace) createNamespace(req *restful.Request, resp *restful.
 
 	err = resp.WriteEntity("success")
 	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
+		fmt.Printf("error while sending error: %v", err)
 	}
 }
 
@@ -495,90 +494,19 @@ func (namespace *Namespace) createService(req *restful.Request, resp *restful.Re
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
+			fmt.Printf("error while sending error: %v", err)
 		}
 
 		return
 	}
 
-	newService.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
-
-	if newService.Metadata.UID == "" {
-		newService.Metadata.UID = uuid.NewString()
-	}
-
-	serviceBytes, err := json.Marshal(newService)
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = etcdServiceAppNamespace.PutResource(fmt.Sprintf("%s/%s/%s", serviceEtcdKey, newService.Metadata.Namespace, newService.Metadata.Name), string(serviceBytes))
-	if err != nil {
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	err = resp.WriteEntity("success")
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
-	}
+	namespace.createResourceInNamespace(req, resp, serviceEtcdKey, newService)
 }
 
 func (namespace *Namespace) getServices(req *restful.Request, resp *restful.Response) {
-	// watchQuery := req.QueryParameter("watch")
+	namespace.getAllResourceInNamespace(req, resp, serviceEtcdKey)
+}
 
-	// if watchQuery == "true" {
-	// 	namespace.watcher(req, resp)
-
-	// 	return
-	// }
-
-	namespaceQuery := req.PathParameter("namespace")
-	resArr, err := etcdServiceAppNamespace.GetAllFromResource(fmt.Sprintf("%s/%s", serviceEtcdKey, namespaceQuery))
-	if err != nil {
-		if strings.Contains(err.Error(), "key not found") {
-			err = resp.WriteEntity([]Pod{})
-			if err != nil {
-				resp.WriteError(http.StatusInternalServerError, err)
-			}
-
-			return
-		}
-
-		err = resp.WriteError(http.StatusBadRequest, err)
-		if err != nil {
-			resp.WriteError(http.StatusInternalServerError, err)
-		}
-
-		return
-	}
-
-	var servicesRes []Service
-	for _, res := range resArr {
-		var service Service
-		if err = json.Unmarshal(res, &service); err != nil {
-			err = resp.WriteError(http.StatusBadRequest, err)
-			if err != nil {
-				resp.WriteError(http.StatusInternalServerError, err)
-			}
-
-			return
-		}
-
-		servicesRes = append(servicesRes, service)
-	}
-
-	err = resp.WriteEntity(servicesRes)
-	if err != nil {
-		resp.WriteError(http.StatusInternalServerError, err)
-	}
+func (namespace *Namespace) getService(req *restful.Request, resp *restful.Response) {
+	namespace.getSingleResourceInNamespace(req, resp, serviceEtcdKey)
 }

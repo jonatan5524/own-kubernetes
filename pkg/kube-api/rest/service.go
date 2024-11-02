@@ -20,7 +20,7 @@ const (
 var etcdServiceAppService etcd.EtcdService
 
 type Service struct {
-	Metadata ServiceMetadata `json:"metadata" yaml:"metadata"`
+	Metadata ResourceMetadata `json:"metadata" yaml:"metadata"`
 
 	Kind string `json:"kind" yaml:"kind"`
 
@@ -34,14 +34,6 @@ type Service struct {
 			TargetPort int    `json:"targetPort" yaml:"targetPort"`
 		} `json:"ports" yaml:"ports"`
 	} `json:"spec" yaml:"spec"`
-}
-
-type ServiceMetadata struct {
-	Annotations       map[string]string `json:"annotations" yaml:"annotations"`
-	Name              string            `json:"name" yaml:"name"`
-	Namespace         string            `json:"namespace" yaml:"namespace"`
-	CreationTimestamp string            `json:"creationTimestamp" yaml:"creationTimestamp"`
-	UID               string            `json:"uid" yaml:"uid"`
 }
 
 func (service *Service) Register(etcdServersEndpoints string) {

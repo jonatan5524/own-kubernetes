@@ -147,145 +147,84 @@ func roundTime(input float64) int {
 	return int(i)
 }
 
-func GetAllPods() ([]rest.Pod, error) {
-	var pods []rest.Pod
+func getResource(path string) (interface{}, error) {
+	var resources interface{}
 
-	resp, err := http.Get(
-		fmt.Sprintf("%s/pods", os.Getenv("KUBE_API_ENDPOINT")),
-	)
+	resp, err := http.Get(path)
 	if err != nil {
-		return pods, err
+		return resources, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return pods, fmt.Errorf("error reading response body: %v", err)
-		}
-
-		return pods, fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return pods, fmt.Errorf("error reading response body: %v", err)
-	}
-
-	err = json.Unmarshal(body, &pods)
-	if err != nil {
-		return pods, fmt.Errorf("error unmarshalling JSON: %v", err)
-	}
-
-	return pods, nil
-}
-
-func GetPods(namespace string) ([]rest.Pod, error) {
-	var pods []rest.Pod
-
-	resp, err := http.Get(
-		fmt.Sprintf("%s/namespaces/%s/pods", os.Getenv("KUBE_API_ENDPOINT"), namespace),
-	)
-	if err != nil {
-		return pods, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return pods, fmt.Errorf("error reading response body: %v", err)
+			return resources, fmt.Errorf("error reading response body: %v", err)
 		}
 
 		if strings.Contains(string(body), "key not found") {
-			return pods, nil
+			return resources, nil
 		}
 
-		return pods, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
+		return resources, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return pods, fmt.Errorf("error reading response body: %v", err)
+		return resources, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	err = json.Unmarshal(body, &pods)
+	err = json.Unmarshal(body, &resources)
 	if err != nil {
-		return pods, fmt.Errorf("error unmarshalling JSON: %v", err)
+		return resources, fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+
+	return resources, nil
+}
+
+func GetPods(namespace string) ([]rest.Pod, error) {
+	resources, err := getResource(
+		fmt.Sprintf("%s/namespaces/%s/pods", os.Getenv("KUBE_API_ENDPOINT"), namespace),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	pods, ok := resources.([]rest.Pod)
+	if !ok {
+		return nil, fmt.Errorf("error formatting resources to pods")
 	}
 
 	return pods, nil
 }
 
 func GetNamespaces() ([]rest.Namespace, error) {
-	var namespaces []rest.Namespace
-
-	resp, err := http.Get(
+	resources, err := getResource(
 		fmt.Sprintf("%s/namespaces", os.Getenv("KUBE_API_ENDPOINT")),
 	)
 	if err != nil {
-		return namespaces, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return namespaces, fmt.Errorf("error reading response body: %v", err)
-		}
-
-		if strings.Contains(string(body), "key not found") {
-			return namespaces, nil
-		}
-
-		return namespaces, fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
+		return nil, err
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return namespaces, fmt.Errorf("error reading response body: %v", err)
-	}
-
-	err = json.Unmarshal(body, &namespaces)
-	if err != nil {
-		return namespaces, fmt.Errorf("error unmarshalling JSON: %v", err)
+	namespaces, ok := resources.([]rest.Namespace)
+	if !ok {
+		return nil, fmt.Errorf("error formatting resources to namespaces")
 	}
 
 	return namespaces, nil
 }
 
 func GetServices(namespace string) ([]rest.Service, error) {
-	var services []rest.Service
-
-	resp, err := http.Get(
+	resources, err := getResource(
 		fmt.Sprintf("%s/namespaces/%s/services", os.Getenv("KUBE_API_ENDPOINT"), namespace),
 	)
 	if err != nil {
-		return services, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return services, fmt.Errorf("error reading response body: %v", err)
-		}
-
-		if strings.Contains(string(body), "key not found") {
-			return services, nil
-		}
-
-		return services, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
+		return nil, err
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return services, fmt.Errorf("error reading response body: %v", err)
-	}
-
-	err = json.Unmarshal(body, &services)
-	if err != nil {
-		return services, fmt.Errorf("error unmarshalling JSON: %v", err)
+	services, ok := resources.([]rest.Service)
+	if !ok {
+		return nil, fmt.Errorf("error formatting resources to services")
 	}
 
 	return services, nil

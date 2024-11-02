@@ -22,7 +22,7 @@ const (
 var etcdServiceAppPod etcd.EtcdService
 
 type Pod struct {
-	Metadata PodMetadata `json:"metadata" yaml:"metadata"`
+	Metadata ResourceMetadata `json:"metadata" yaml:"metadata"`
 
 	Kind string `json:"kind" yaml:"kind"`
 
@@ -39,15 +39,6 @@ type PodStatus struct {
 	PodIP             string            `json:"podIP" yaml:"podIP"`
 	Phase             string            `json:"phase" yaml:"phase"`
 	ContainerStatuses []ContainerStatus `json:"containerStatuses" yaml:"containerStatuses"`
-}
-
-type PodMetadata struct {
-	Annotations       map[string]string `json:"annotations" yaml:"annotations"`
-	Labels            map[string]string `json:"labels" yaml:"labels"`
-	Name              string            `json:"name" yaml:"name"`
-	Namespace         string            `json:"namespace" yaml:"namespace"`
-	CreationTimestamp string            `json:"creationTimestamp" yaml:"creationTimestamp"`
-	UID               string            `json:"uid" yaml:"uid"`
 }
 
 type ContainerStatus struct {
@@ -91,6 +82,27 @@ func (pod *Pod) Register(etcdServersEndpoints string) {
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 
 	restful.Add(ws)
+}
+
+func (pod *Pod) initLastAppliedConfigurations() error {
+	podWithoutStatus := *pod
+	podWithoutStatus.Status = PodStatus{}
+	podWithoutStatus.Metadata.Annotations = make(map[string]string)
+	podWithoutStatus.Metadata.CreationTimestamp = ""
+	podWithoutStatus.Metadata.UID = ""
+
+	podBytes, err := json.Marshal(podWithoutStatus)
+	if err != nil {
+		return err
+	}
+
+	if pod.Metadata.Annotations == nil {
+		pod.Metadata.Annotations = make(map[string]string)
+	}
+
+	pod.Metadata.Annotations[LastAppliedConfigurationAnnotationKey] = string(podBytes)
+
+	return nil
 }
 
 func (pod *Pod) getAll(req *restful.Request, resp *restful.Response) {
