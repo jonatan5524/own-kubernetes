@@ -38,7 +38,7 @@ func readAndStartSystemManifests(systemManifestPath string, hostname string) ([]
 				return pods, fmt.Errorf("error parsing pod from event: %v", err)
 			}
 
-			podRes, err := pod.CreatePod(podResManifest, podCIDR, podBridgeName)
+			podRes, err := pod.CreatePodContainers(podResManifest, podCIDR, podBridgeName)
 			if err != nil {
 				return pods, err
 			}

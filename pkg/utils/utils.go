@@ -80,7 +80,7 @@ func ReplaceAtIndex(str string, replacement rune, index int) string {
 	return str[:index] + string(replacement) + str[index+1:]
 }
 
-func ExecuteCommand(command string, waitToComplete bool) error {
+func ExecuteCommand(command string) error {
 	log.Printf("Executing: %s", command)
 
 	splitedCommand := strings.Split(command, " ")

@@ -19,6 +19,8 @@ var rootCmd = &cobra.Command{
 			[]kubeapi.Rest{
 				&rest.Pod{},
 				&rest.Namespace{},
+				&rest.Service{},
+				&rest.Endpoint{},
 			})
 		defer app.Stop()
 

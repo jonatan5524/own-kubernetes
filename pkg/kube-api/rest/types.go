@@ -8,3 +8,10 @@ type ResourceMetadata struct {
 	CreationTimestamp string            `json:"creationTimestamp" yaml:"creationTimestamp"`
 	UID               string            `json:"uid" yaml:"uid"`
 }
+
+type TargetRef struct {
+	Kind      string `json:"kind" yaml:"kind"`
+	Name      string `json:"name" yaml:"name"`
+	Namespace string `json:"namespace" yaml:"namespace"`
+	UID       string `json:"uid" yaml:"uid"`
+}

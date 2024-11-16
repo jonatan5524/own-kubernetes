@@ -23,20 +23,17 @@ func CreateBridge(name string, podCIDR string) error {
 	log.Printf("creating bridge %s %s", name, ipAddr)
 
 	if err := utils.ExecuteCommand(
-		fmt.Sprintf("%s link add %s type bridge", ipCommand, name),
-		false); err != nil {
+		fmt.Sprintf("%s link add %s type bridge", ipCommand, name)); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
-		fmt.Sprintf("%s addr add %s dev %s", ipCommand, ipAddr, name),
-		false); err != nil {
+		fmt.Sprintf("%s addr add %s dev %s", ipCommand, ipAddr, name)); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
-		fmt.Sprintf("%s link set %s up", ipCommand, name),
-		false); err != nil {
+		fmt.Sprintf("%s link set %s up", ipCommand, name)); err != nil {
 		return err
 	}
 
@@ -83,7 +80,6 @@ func getNextAvailableIPAddr(cidr string) (string, error) {
 	for _, ip := range hosts {
 		if err := utils.ExecuteCommand(
 			fmt.Sprintf("/usr/bin/ping -c1 -t1 %s", ip),
-			true,
 		); err != nil {
 			return ip, nil
 		}
@@ -119,42 +115,36 @@ func hosts(cidr string) ([]string, error) {
 func createVethPairNamespaces(name string, pair string, bridge string, nsNetPath string, ipAddr string, bridgeIPAddr string) error {
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/sbin/ip link add %s type veth peer name %s", name, pair),
-		false,
 	); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/sbin/ip link set %s up", name),
-		false,
 	); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/sbin/ip link set %s netns %s", pair, nsNetPath),
-		false,
 	); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/bin/nsenter --net=%s ip link set %s up", nsNetPath, pair),
-		false,
 	); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/bin/nsenter --net=%s /usr/sbin/ip addr add %s dev %s", nsNetPath, ipAddr, pair),
-		false,
 	); err != nil {
 		return err
 	}
 
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/sbin/ip link set %s master %s", name, bridge),
-		false,
 	); err != nil {
 		return err
 	}

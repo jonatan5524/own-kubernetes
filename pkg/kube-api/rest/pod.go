@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 
 	restful "github.com/emicklei/go-restful/v3"
 	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/etcd"
 	kubeapi_logger "github.com/jonatan5524/own-kubernetes/pkg/kube-api/logger"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -62,6 +60,10 @@ type Container struct {
 		Name  string `json:"name" yaml:"name"`
 		Value string `json:"value" yaml:"value"`
 	} `json:"env" yaml:"env"`
+
+	SecurityContext struct {
+		Privileged bool `json:"privileged" yaml:"privileged"`
+	} `json:"securityContext" yaml:"securityContext"`
 }
 
 func (pod *Pod) Register(etcdServersEndpoints string) {
@@ -184,13 +186,8 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 
 				if fieldSelector == "" {
 					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
-				} else {
-					splitedFieldSelector := strings.Split(fieldSelector, "=")
-					resGJSON := gjson.Get(string(event.Kv.Value), splitedFieldSelector[0])
-
-					if resGJSON.Exists() && resGJSON.Value() == splitedFieldSelector[1] {
-						fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
-					}
+				} else if validateFieldSelector(fieldSelector, string(event.Kv.Value)) {
+					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
 				}
 
 				resp.Flush()

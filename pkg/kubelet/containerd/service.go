@@ -193,6 +193,12 @@ func buildContainerSpec(
 		)
 	}
 
+	if container.SecurityContext.Privileged {
+		specsOpts = append(specsOpts, 
+			oci.WithPrivileged,
+		)
+	}
+
 	if len(container.Command) != 0 {
 		specsOpts = append(specsOpts, oci.WithProcessArgs(append(container.Command, container.Args...)...))
 	}

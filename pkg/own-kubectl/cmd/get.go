@@ -156,6 +156,53 @@ var getServicesCmd = &cobra.Command{
 	},
 }
 
+var getEndpointsCmd = &cobra.Command{
+	Use:   "endpoints",
+	Short: "endpoints",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		namespace, err := cmd.Flags().GetString(namespaceFlag)
+		if err != nil {
+			return err
+		}
+
+		endpoints, err := ownkubectl.GetEndpoints(namespace)
+		if err != nil {
+			return err
+		}
+
+		if len(endpoints) == 0 {
+			fmt.Printf("No resource found\n")
+
+			return nil
+		}
+
+		outputFormat, err := cmd.Flags().GetString(outputFlag)
+		if err != nil {
+			return err
+		}
+
+		if outputFormat == ownkubectl.OutputFormatJSON {
+			endpointsJSONBytes, err := json.MarshalIndent(endpoints, "", " ")
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("%s\n", string(endpointsJSONBytes))
+		} else if outputFormat == ownkubectl.OutputFormatYAML {
+			endpointsYAMLBytes, err := yaml.Marshal(endpoints)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("%s\n", string(endpointsYAMLBytes))
+		} else {
+			ownkubectl.PrintEndpointsInTableFormat(endpoints)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(getCmd)
 
@@ -172,4 +219,9 @@ func init() {
 	getServicesCmd.Flags().StringP(outputFlag, "o", "",
 		fmt.Sprintf("output format: %s, %s, %s", ownkubectl.OutputFormatWide, ownkubectl.OutputFormatYAML, ownkubectl.OutputFormatJSON))
 	getServicesCmd.Flags().StringP(namespaceFlag, "n", defaultNamespace, "service namespace")
+
+	getCmd.AddCommand(getEndpointsCmd)
+	getEndpointsCmd.Flags().StringP(outputFlag, "o", "",
+		fmt.Sprintf("output format: %s, %s, %s", ownkubectl.OutputFormatWide, ownkubectl.OutputFormatYAML, ownkubectl.OutputFormatJSON))
+	getEndpointsCmd.Flags().StringP(namespaceFlag, "n", defaultNamespace, "endpoint namespace")
 }

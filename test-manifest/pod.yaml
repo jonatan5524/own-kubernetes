@@ -1,8 +1,0 @@
-kind: Pod
-metadata:
-  name: test2
-  namespace: test
-spec:
-  containers:
-    - name: test
-      image: docker.io/jonatan5524/own-kubernetes:test

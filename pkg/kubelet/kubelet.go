@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	kubeproxy "github.com/jonatan5524/own-kubernetes/pkg/kube-proxy"
 	"github.com/jonatan5524/own-kubernetes/pkg/kubelet/pod"
 	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 )
@@ -65,6 +66,10 @@ func (app *KubeletApp) Setup() error {
 		return err
 	}
 
+	if err := kubeproxy.Setup(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -87,6 +92,9 @@ func (app *KubeletApp) Run() error {
 			}
 		}
 	}
+
+	go kubeproxy.Run(app.kubeAPIEndpoint)
+	defer kubeproxy.Stop()
 
 	if err := pod.ListenForPodCreation(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {
 		return fmt.Errorf("%v", err)

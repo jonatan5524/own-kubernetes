@@ -87,6 +87,22 @@ func PrintServicesInTableFormat(services []rest.Service, outputFormat string) {
 	w.Flush()
 }
 
+func PrintEndpointsInTableFormat(endpoints []rest.Endpoint) {
+	w := tabwriter.NewWriter(os.Stdout, 10, 1, 5, ' ', 0)
+
+	fmt.Fprintln(w, "NAME\tENDPOINTS\tAGE")
+
+	for _, endpoint := range endpoints {
+		fmt.Fprintf(w, "%s\t%s\t%s\n",
+			endpoint.Metadata.Name,
+			getFormattedAddresses(endpoint),
+			getAge(endpoint.Metadata.CreationTimestamp),
+		)
+	}
+
+	w.Flush()
+}
+
 func PrintNamespacesInTableFormat(namespaces []rest.Namespace) {
 	w := tabwriter.NewWriter(os.Stdout, 10, 1, 5, ' ', 0)
 	fmt.Fprintln(w, "NAME\tSTATUS\tAGE")
@@ -100,6 +116,20 @@ func PrintNamespacesInTableFormat(namespaces []rest.Namespace) {
 	}
 
 	w.Flush()
+}
+
+func getFormattedAddresses(endpoint rest.Endpoint) string {
+	endpoints := ""
+
+	for _, subset := range endpoint.Subsets {
+		for _, address := range subset.Addresses {
+			for _, port := range subset.Ports {
+				endpoints += fmt.Sprintf("%s:%d,", address.IP, port.Port)
+			}
+		}
+	}
+
+	return endpoints[:len(endpoints)-1]
 }
 
 func getFormattedPorts(service rest.Service) string {
@@ -147,8 +177,8 @@ func roundTime(input float64) int {
 	return int(i)
 }
 
-func getResource(path string) (interface{}, error) {
-	var resources interface{}
+func getResource(path string) ([]byte, error) {
+	var resources []byte
 
 	resp, err := http.Get(path)
 	if err != nil {
@@ -174,12 +204,7 @@ func getResource(path string) (interface{}, error) {
 		return resources, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	err = json.Unmarshal(body, &resources)
-	if err != nil {
-		return resources, fmt.Errorf("error unmarshalling JSON: %v", err)
-	}
-
-	return resources, nil
+	return body, nil
 }
 
 func GetPods(namespace string) ([]rest.Pod, error) {
@@ -190,9 +215,10 @@ func GetPods(namespace string) ([]rest.Pod, error) {
 		return nil, err
 	}
 
-	pods, ok := resources.([]rest.Pod)
-	if !ok {
-		return nil, fmt.Errorf("error formatting resources to pods")
+	var pods []rest.Pod
+	err = json.Unmarshal(resources, &pods)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
 
 	return pods, nil
@@ -206,9 +232,10 @@ func GetNamespaces() ([]rest.Namespace, error) {
 		return nil, err
 	}
 
-	namespaces, ok := resources.([]rest.Namespace)
-	if !ok {
-		return nil, fmt.Errorf("error formatting resources to namespaces")
+	var namespaces []rest.Namespace
+	err = json.Unmarshal(resources, &namespaces)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
 
 	return namespaces, nil
@@ -222,10 +249,28 @@ func GetServices(namespace string) ([]rest.Service, error) {
 		return nil, err
 	}
 
-	services, ok := resources.([]rest.Service)
-	if !ok {
-		return nil, fmt.Errorf("error formatting resources to services")
+	var services []rest.Service
+	err = json.Unmarshal(resources, &services)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
 
 	return services, nil
+}
+
+func GetEndpoints(namespace string) ([]rest.Endpoint, error) {
+	resources, err := getResource(
+		fmt.Sprintf("%s/namespaces/%s/endpoints", os.Getenv("KUBE_API_ENDPOINT"), namespace),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var endpoints []rest.Endpoint
+	err = json.Unmarshal(resources, &endpoints)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+
+	return endpoints, nil
 }

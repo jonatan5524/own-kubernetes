@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 
@@ -110,9 +111,9 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR strin
 	log.Printf("started watch on pod from kube API")
 
 	resp, err := http.Get(fmt.Sprintf(
-		"%s/pods/?watch=true&fieldSelector=spec.nodeName=%s",
+		"%s/pods/?watch=true&fieldSelector=%s",
 		kubeAPIEndpoint,
-		hostname,
+		url.QueryEscape(fmt.Sprintf("spec.nodeName=%s", hostname)),
 	),
 	)
 	if err != nil {
@@ -172,21 +173,27 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR strin
 			log.Printf("Pod has changed starts creation")
 		}
 
-		podRes, err := CreatePod(pod, podCIDR, podBridgeName)
-		if err != nil {
-			log.Printf("error creating pod: %v", err)
-
-			continue
-		}
-
-		if err := UpdatePodStatus(kubeAPIEndpoint, podRes.Metadata.Name, pod.Metadata.Namespace, podRes.Status); err != nil {
-			log.Printf("error updating pod status to api: %v", err)
-
-			continue
-		}
-
-		log.Printf("Pod %s is created and started", podRes.Metadata.UID)
+		go createPod(pod, podCIDR, podBridgeName, kubeAPIEndpoint)
 	}
+}
+
+func createPod(pod kubeapi_rest.Pod, podCIDR string, podBridgeName string, kubeAPIEndpoint string) {
+	log.Printf("started creating pods %s/%s", pod.Metadata.Namespace, pod.Metadata.Name)
+
+	podRes, err := CreatePodContainers(pod, podCIDR, podBridgeName)
+	if err != nil {
+		log.Printf("error creating pod: %v", err)
+
+		return
+	}
+
+	if err := UpdatePodStatus(kubeAPIEndpoint, podRes.Metadata.Name, pod.Metadata.Namespace, podRes.Status); err != nil {
+		log.Printf("error updating pod status to api: %v", err)
+
+		return
+	}
+
+	log.Printf("Pod %s is created and started", podRes.Metadata.UID)
 }
 
 func compareLastAppliedToCurrentPod(podRes kubeapi_rest.Pod) (bool, error) {
@@ -205,7 +212,7 @@ func compareLastAppliedToCurrentPod(podRes kubeapi_rest.Pod) (bool, error) {
 	return reflect.DeepEqual(lastAppliedPodRes, podRes), nil
 }
 
-func CreatePod(pod kubeapi_rest.Pod, podCIDR string, podBridgeName string) (*kubeapi_rest.Pod, error) {
+func CreatePodContainers(pod kubeapi_rest.Pod, podCIDR string, podBridgeName string) (*kubeapi_rest.Pod, error) {
 	if pod.Metadata.UID == "" {
 		pod.Metadata.UID = uuid.NewString()
 	}

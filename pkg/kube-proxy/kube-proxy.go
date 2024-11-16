@@ -1,33 +1,33 @@
 package kubeproxy
 
 import (
+	"fmt"
 	"log"
+
+	"github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/iptables"
+	"github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/service"
 )
 
-type KubeProxy interface {
-	Run() error
-	Setup() error
-	Stop() error
-}
-
-type KubeProxyApp struct{}
-
-func NewKubeProxy() KubeProxy {
-	app := &KubeProxyApp{}
-
-	return app
-}
-
-func (app *KubeProxyApp) Setup() error {
+func Setup() error {
 	log.Println("KubeProxy setup")
 
+	if err := iptables.InitKubeServicesChain(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (app *KubeProxyApp) Run() error {
+func Run(kubeAPIEndpoint string) error {
+	log.Println("kube-proxy running")
+
+	if err := service.ListenForServiceCreation(kubeAPIEndpoint); err != nil {
+		return fmt.Errorf("%v", err)
+	}
+
 	return nil
 }
 
-func (app *KubeProxyApp) Stop() error {
+func Stop() error {
 	return nil
 }

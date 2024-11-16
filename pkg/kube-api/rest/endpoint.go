@@ -14,60 +14,59 @@ import (
 )
 
 const (
-	serviceEtcdKey = "/services/specs"
+	endpointEtcdKey = "/services/endpoints"
 )
 
-var etcdServiceAppService etcd.EtcdService
+var etcdServiceAppEndpoint etcd.EtcdService
 
-type Service struct {
+type Endpoint struct {
 	Metadata ResourceMetadata `json:"metadata" yaml:"metadata"`
 
 	Kind string `json:"kind" yaml:"kind"`
 
-	Spec struct {
-		Selector  map[string]string `json:"selector" yaml:"selector"`
-		Type      string            `json:"type" yaml:"type"`
-		ClusterIP string            `json:"clusterIP" yaml:"clusterIP"`
-		Ports     []ServicePorts    `json:"ports" yaml:"ports"`
-	} `json:"spec" yaml:"spec"`
+	Subsets []EndpointSubset `json:"subsets" yaml:"subsets"`
 }
 
-type ServicePorts struct {
-	Name       string `json:"name" yaml:"name"`
-	Protocol   string `json:"protocol" yaml:"protocol"`
-	Port       int    `json:"port" yaml:"port"`
-	TargetPort int    `json:"targetPort" yaml:"targetPort"`
+type EndpointSubset struct {
+	Addresses []EndpointAddress `json:"addresses" yaml:"addresses"`
+	Ports     []ServicePorts    `json:"ports" yaml:"ports"`
 }
 
-func (service *Service) Register(etcdServersEndpoints string) {
-	log.Println("rest api service register")
+type EndpointAddress struct {
+	IP        string    `json:"ip" yaml:"ip"`
+	NodeName  string    `json:"nodeName" yaml:"nodeName"`
+	TargetRef TargetRef `json:"targetRef" yaml:"targetRef"`
+}
 
-	etcdServiceAppService = etcd.NewEtcdService(etcdServersEndpoints)
+func (endpoint *Endpoint) Register(etcdServersEndpoints string) {
+	log.Println("rest api endpoint register")
+
+	etcdServiceAppEndpoint = etcd.NewEtcdService(etcdServersEndpoints)
 
 	ws := new(restful.WebService)
 
 	ws.Filter(kubeapi_logger.LoggerMiddleware)
 
-	ws.Path("/services").
+	ws.Path("/endpoints").
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
-	ws.Route(ws.GET("/").To(service.getAll).
+	ws.Route(ws.GET("/").To(endpoint.getAll).
 		Param(ws.QueryParameter("watch", "boolean for watching resource").DataType("bool").DefaultValue("false")).
 		Param(ws.QueryParameter("fieldSelector", "field selector for resource").DataType("string").DefaultValue("")))
 	restful.Add(ws)
 }
 
-func (service *Service) getAll(req *restful.Request, resp *restful.Response) {
+func (endpoint *Endpoint) getAll(req *restful.Request, resp *restful.Response) {
 	watchQuery := req.QueryParameter("watch")
 
 	if watchQuery == "true" {
-		service.watcher(req, resp)
+		endpoint.watcher(req, resp)
 
 		return
 	}
 
-	resArr, err := etcdServiceAppService.GetAllFromResource(serviceEtcdKey)
+	resArr, err := etcdServiceAppEndpoint.GetAllFromResource(endpointEtcdKey)
 	if err != nil {
 		err = resp.WriteError(http.StatusBadRequest, err)
 		if err != nil {
@@ -77,10 +76,10 @@ func (service *Service) getAll(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	servicesRes := make([]Service, len(resArr))
+	endpointsRes := make([]Endpoint, len(resArr))
 	for index, res := range resArr {
-		var service Service
-		if err = json.Unmarshal(res, &service); err != nil {
+		var endpoint Endpoint
+		if err = json.Unmarshal(res, &endpoint); err != nil {
 			err = resp.WriteError(http.StatusBadRequest, err)
 			if err != nil {
 				resp.WriteError(http.StatusInternalServerError, err)
@@ -89,16 +88,16 @@ func (service *Service) getAll(req *restful.Request, resp *restful.Response) {
 			return
 		}
 
-		servicesRes[index] = service
+		endpointsRes[index] = endpoint
 	}
 
-	err = resp.WriteEntity(servicesRes)
+	err = resp.WriteEntity(endpointsRes)
 	if err != nil {
 		resp.WriteError(http.StatusInternalServerError, err)
 	}
 }
 
-func (service *Service) watcher(req *restful.Request, resp *restful.Response) {
+func (endpoint *Endpoint) watcher(req *restful.Request, resp *restful.Response) {
 	watchQuery := req.QueryParameter("watch")
 	fieldSelector := req.QueryParameter("fieldSelector")
 
@@ -111,7 +110,7 @@ func (service *Service) watcher(req *restful.Request, resp *restful.Response) {
 	resp.Header().Set("Cache-Control", "no-cache")
 	resp.Header().Set("Connection", "keep-alive")
 
-	watchChan, closeChanFunc, err := etcdServiceAppService.GetWatchChannel(serviceEtcdKey)
+	watchChan, closeChanFunc, err := etcdServiceAppEndpoint.GetWatchChannel(endpointEtcdKey)
 	if err != nil {
 		err = resp.WriteErrorString(http.StatusBadRequest, err.Error())
 		if err != nil {
@@ -123,7 +122,7 @@ func (service *Service) watcher(req *restful.Request, resp *restful.Response) {
 	defer closeChanFunc()
 	defer resp.CloseNotify()
 
-	log.Println("Client service watcher started")
+	log.Println("Client endpoint watcher started")
 
 	for {
 		select {
