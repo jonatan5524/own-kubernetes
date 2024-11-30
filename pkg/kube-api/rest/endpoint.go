@@ -139,7 +139,7 @@ func (endpoint *Endpoint) watcher(req *restful.Request, resp *restful.Response) 
 				} else {
 					splitedFieldSelector := strings.Split(fieldSelector, "=")
 					resGJSON := gjson.Get(string(event.Kv.Value), splitedFieldSelector[0])
-
+					
 					if resGJSON.Exists() && resGJSON.Value() == splitedFieldSelector[1] {
 						fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
 					}

@@ -1,12 +1,12 @@
 kind: Pod
 metadata:
-  name: echo-server
+  name: echo-server-hostnetwork
   namespace: test
   labels:
     app: echoserver
 spec:
   containers:
-    - name: echo-server
+    - name: echo-server-hostnetwork
       image: docker.io/mendhak/http-https-echo:34
       ports:
         - containerPort: 3000

@@ -6,6 +6,11 @@ import (
 
 	"github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/iptables"
 	"github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/service"
+	"github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/service/endpoint"
+)
+
+const (
+	serviceClusterIPCIDR = "10.96.0.0/16"
 )
 
 func Setup() error {
@@ -15,13 +20,20 @@ func Setup() error {
 		return err
 	}
 
+	if err := iptables.InitNodePortChain(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func Run(kubeAPIEndpoint string) error {
+func Run(kubeAPIEndpoint string, hostname string, podCIDR string) error {
 	log.Println("kube-proxy running")
 
-	if err := service.ListenForServiceCreation(kubeAPIEndpoint); err != nil {
+	go endpoint.ListenForEndpointCreation(kubeAPIEndpoint, hostname)
+	go service.ListenForPodRunning(kubeAPIEndpoint, hostname)
+
+	if err := service.ListenForServiceCreation(kubeAPIEndpoint, serviceClusterIPCIDR, podCIDR); err != nil {
 		return fmt.Errorf("%v", err)
 	}
 

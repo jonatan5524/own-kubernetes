@@ -3,7 +3,6 @@ package net
 import (
 	"fmt"
 	"log"
-	"net"
 	"os"
 
 	"github.com/jonatan5524/own-kubernetes/pkg/utils"
@@ -47,8 +46,8 @@ func getBridgeIP(podCIDR string) string {
 	return utils.ReplaceAtIndex(podCIDRWithoutMask, '1', len(podCIDRWithoutMask)-1)
 }
 
-func ConfigurePodNetwork(podID string, bridgeName string, podCIDR string, nsNetPath string) (string, error) {
-	podIP, err := getNextAvailableIPAddr(podCIDR)
+func ConfigurePodNetwork(podID string, bridgeName string, podCIDR string, nsNetPath string, hostNetwork bool) (string, error) {
+	podIP, err := utils.GetNextAvailableIPAddr(podCIDR)
 	if err != nil {
 		return "", err
 	}
@@ -64,6 +63,7 @@ func ConfigurePodNetwork(podID string, bridgeName string, podCIDR string, nsNetP
 		nsNetPath,
 		podIP,
 		bridgeIP,
+		hostNetwork,
 	); err != nil {
 		return "", err
 	}
@@ -71,48 +71,7 @@ func ConfigurePodNetwork(podID string, bridgeName string, podCIDR string, nsNetP
 	return podIP, nil
 }
 
-func getNextAvailableIPAddr(cidr string) (string, error) {
-	hosts, err := hosts(cidr)
-	if err != nil {
-		return "", err
-	}
-
-	for _, ip := range hosts {
-		if err := utils.ExecuteCommand(
-			fmt.Sprintf("/usr/bin/ping -c1 -t1 %s", ip),
-		); err != nil {
-			return ip, nil
-		}
-	}
-
-	return "", fmt.Errorf("no available ip have found in cidr: %s", cidr)
-}
-
-func hosts(cidr string) ([]string, error) {
-	ip, ipnet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return nil, err
-	}
-
-	inc := func(ip net.IP) {
-		for j := len(ip) - 1; j >= 0; j-- {
-			ip[j]++
-			if ip[j] > 0 {
-				break
-			}
-		}
-	}
-
-	var ips []string
-	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
-		ips = append(ips, ip.String())
-	}
-
-	// remove network address and broadcast address
-	return ips[1 : len(ips)-1], nil
-}
-
-func createVethPairNamespaces(name string, pair string, bridge string, nsNetPath string, ipAddr string, bridgeIPAddr string) error {
+func createVethPairNamespaces(name string, pair string, bridge string, nsNetPath string, ipAddr string, bridgeIPAddr string, hostNetwork bool) error {
 	if err := utils.ExecuteCommand(
 		fmt.Sprintf("/usr/sbin/ip link add %s type veth peer name %s", name, pair),
 	); err != nil {
@@ -138,7 +97,7 @@ func createVethPairNamespaces(name string, pair string, bridge string, nsNetPath
 	}
 
 	if err := utils.ExecuteCommand(
-		fmt.Sprintf("/usr/bin/nsenter --net=%s /usr/sbin/ip addr add %s dev %s", nsNetPath, ipAddr, pair),
+		fmt.Sprintf("/usr/bin/nsenter --net=%s /usr/sbin/ip addr add %s/16 dev %s", nsNetPath, ipAddr, pair),
 	); err != nil {
 		return err
 	}
@@ -147,6 +106,14 @@ func createVethPairNamespaces(name string, pair string, bridge string, nsNetPath
 		fmt.Sprintf("/usr/sbin/ip link set %s master %s", name, bridge),
 	); err != nil {
 		return err
+	}
+
+	if !hostNetwork {
+		if err := utils.ExecuteCommand(
+			fmt.Sprintf("/usr/bin/nsenter --net=%s /usr/sbin/ip route add default via %s", nsNetPath, bridgeIPAddr),
+		); err != nil {
+			return err
+		}
 	}
 
 	return nil

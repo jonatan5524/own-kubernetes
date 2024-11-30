@@ -260,6 +260,7 @@ func CreatePodContainers(pod kubeapi_rest.Pod, podCIDR string, podBridgeName str
 		podBridgeName,
 		podCIDR,
 		fmt.Sprintf(defaultNetNamespacePath, pauseContainerPID),
+		pod.Spec.HostNetwork,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to configure pod network %v", err)

@@ -1,0 +1,12 @@
+kind: Service
+metadata:
+  name: whats-my-ip-nodeport2
+  namespace: test
+spec:
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: NodePort
+  selector:
+    app: whatsmyip

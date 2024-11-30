@@ -88,10 +88,21 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.BodyParameter("Service", "a Service resource (JSON)").DataType("rest.Endpoint")))
 
+	// --- PATCH ----
 	ws.Route(ws.PATCH("/{namespace}/pods/{name}/status").To(namespace.updateStatus).Filter(validateNamespaceExists).
 		Param(ws.PathParameter("name", "name of the pod").DataType("string")).
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.BodyParameter("PodStatus", "a Pod status resource (JSON)").DataType("rest.PodStatus")))
+
+	ws.Route(ws.PATCH("/{namespace}/services/{name}").To(namespace.createService).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("name", "name of the service").DataType("string")).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.BodyParameter("Service", "a Service resource (JSON)").DataType("rest.Service")))
+
+	ws.Route(ws.PATCH("/{namespace}/endpoints/{name}").To(namespace.createEndpoint).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("name", "name of the endpoint").DataType("string")).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.BodyParameter("Endpoint", "a Endpoint resource (JSON)").DataType("rest.Endpoint")))
 
 	restful.Add(ws)
 
@@ -525,7 +536,9 @@ func (namespace *Namespace) createService(req *restful.Request, resp *restful.Re
 		newService.Metadata.Namespace = namespaceQuery
 	}
 
-	newService.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
+	if newService.Metadata.CreationTimestamp == "" {
+		newService.Metadata.CreationTimestamp = time.Now().Format(time.RFC3339)
+	}
 
 	if newService.Metadata.UID == "" {
 		newService.Metadata.UID = uuid.NewString()

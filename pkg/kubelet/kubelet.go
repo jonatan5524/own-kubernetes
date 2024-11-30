@@ -93,7 +93,7 @@ func (app *KubeletApp) Run() error {
 		}
 	}
 
-	go kubeproxy.Run(app.kubeAPIEndpoint)
+	go kubeproxy.Run(app.kubeAPIEndpoint, app.hostname, podCIDR)
 	defer kubeproxy.Stop()
 
 	if err := pod.ListenForPodCreation(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,11 +85,12 @@ func ExecuteCommand(command string) error {
 	log.Printf("Executing: %s", command)
 
 	splitedCommand := strings.Split(command, " ")
+
 	cmd := exec.Command(splitedCommand[0], splitedCommand[1:]...)
 
 	stdout, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("error running command: %v", err)
+		return fmt.Errorf("error running command: %v output: %s", err, string(stdout))
 	}
 
 	if len(stdout) > 0 {
@@ -96,4 +98,45 @@ func ExecuteCommand(command string) error {
 	}
 
 	return nil
+}
+
+func GetNextAvailableIPAddr(cidr string) (string, error) {
+	hosts, err := HostsFromCIDR(cidr)
+	if err != nil {
+		return "", err
+	}
+
+	for _, ip := range hosts {
+		if err := ExecuteCommand(
+			fmt.Sprintf("/usr/bin/ping -c1 -t1 %s", ip),
+		); err != nil {
+			return ip, nil
+		}
+	}
+
+	return "", fmt.Errorf("no available ip have found in cidr: %s", cidr)
+}
+
+func HostsFromCIDR(cidr string) ([]string, error) {
+	ip, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, err
+	}
+
+	inc := func(ip net.IP) {
+		for j := len(ip) - 1; j >= 0; j-- {
+			ip[j]++
+			if ip[j] > 0 {
+				break
+			}
+		}
+	}
+
+	var ips []string
+	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
+		ips = append(ips, ip.String())
+	}
+
+	// remove network address and broadcast address
+	return ips[1 : len(ips)-1], nil
 }

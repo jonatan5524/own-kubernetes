@@ -79,7 +79,7 @@ func CreateContainer(
 	containerRef, err := client.NewContainer(
 		ctx,
 		createContainerSpec.ContainerID,
-		containerd.WithNewSnapshot(container.Name+"-snapshot", imageRef),
+		containerd.WithNewSnapshot(createContainerSpec.ContainerID, imageRef),
 		containerd.WithNewSpec(containerSpec...),
 	)
 	if err != nil {
@@ -194,7 +194,7 @@ func buildContainerSpec(
 	}
 
 	if container.SecurityContext.Privileged {
-		specsOpts = append(specsOpts, 
+		specsOpts = append(specsOpts,
 			oci.WithPrivileged,
 		)
 	}
