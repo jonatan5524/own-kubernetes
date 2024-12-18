@@ -15,6 +15,7 @@ import (
 	clusterip "github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/service/clusterIP"
 	"github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/service/endpoint"
 	nodeport "github.com/jonatan5524/own-kubernetes/pkg/kube-proxy/service/nodePort"
+	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,19 +57,28 @@ func ListenForServiceCreation(kubeAPIEndpoint string, clusterIPCIDR string, podC
 			continue
 		}
 
-		log.Printf("event: %s", line)
+		typeEvent, value, err := utils.GetTypeAndValueFromEvent(line)
+		if err != nil {
+			log.Printf("error getting type and value from event: %v", err)
+
+			continue
+		}
+
+		log.Printf("service event for services: %s %s", typeEvent, value)
 
 		var service kubeapi_rest.Service
-		err = yaml.Unmarshal([]byte(line), &service)
+		err = yaml.Unmarshal([]byte(value), &service)
 		if err != nil {
 			log.Printf("error parsing pod from event: %v", err)
 
 			continue
 		}
 
-		for _, port := range service.Spec.Ports {
-			if !clusterip.CheckIfClusterIPServiceExists(service.Metadata.Namespace, service.Metadata.Name, port.Name) {
-				go createService(kubeAPIEndpoint, service, clusterIPCIDR, podCIDR)
+		if typeEvent == "PUT" {
+			for _, port := range service.Spec.Ports {
+				if !clusterip.CheckIfClusterIPServiceExists(service.Metadata.Namespace, service.Metadata.Name, port.Name) {
+					go createService(kubeAPIEndpoint, service, clusterIPCIDR, podCIDR)
+				}
 			}
 		}
 	}
@@ -113,19 +123,31 @@ func ListenForPodRunning(kubeAPIEndpoint string, hostname string) error {
 			continue
 		}
 
-		log.Printf("event: %s", line)
+		typeEvent, value, err := utils.GetTypeAndValueFromEvent(line)
+		if err != nil {
+			log.Printf("error getting type and value from event: %v", err)
+
+			continue
+		}
+
+		log.Printf("service event for pods: %s %s", typeEvent, value)
 
 		var pod kubeapi_rest.Pod
-		err = yaml.Unmarshal([]byte(line), &pod)
+		err = yaml.Unmarshal([]byte(value), &pod)
 		if err != nil {
 			log.Printf("error parsing pod from event: %v", err)
 
 			continue
 		}
 
-		if pod.Status.Phase == "Running" {
-			go conditionalCreateEndpoints(pod, kubeAPIEndpoint)
+		if typeEvent == "PUT" {
+			if pod.Status.Phase == "Running" {
+				go conditionalCreateEndpoints(pod, kubeAPIEndpoint)
+			} else {
+				go endpoint.DeleteEndpointAddressIfExists(pod, kubeAPIEndpoint)
+			}
 		}
+		// TODO: check if not running and if created than delete endpoint
 	}
 }
 

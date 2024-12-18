@@ -135,13 +135,13 @@ func (endpoint *Endpoint) watcher(req *restful.Request, resp *restful.Response) 
 				log.Printf("watch: %s executed on %s with value %s\n", event.Type, string(event.Kv.Key), string(event.Kv.Value))
 
 				if fieldSelector == "" {
-					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
-				} else {
+					fmt.Fprintf(resp, "Type: %s Value: %s\n", event.Type, string(event.Kv.Value))
+					} else {
 					splitedFieldSelector := strings.Split(fieldSelector, "=")
 					resGJSON := gjson.Get(string(event.Kv.Value), splitedFieldSelector[0])
 					
 					if resGJSON.Exists() && resGJSON.Value() == splitedFieldSelector[1] {
-						fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
+						fmt.Fprintf(resp, "Type: %s Value: %s\n", event.Type, string(event.Kv.Value))
 					}
 				}
 

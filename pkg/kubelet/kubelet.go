@@ -96,6 +96,8 @@ func (app *KubeletApp) Run() error {
 	go kubeproxy.Run(app.kubeAPIEndpoint, app.hostname, podCIDR)
 	defer kubeproxy.Stop()
 
+	go pod.Reconcile(app.kubeAPIEndpoint, app.hostname)
+
 	if err := pod.ListenForPodCreation(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {
 		return fmt.Errorf("%v", err)
 	}

@@ -185,9 +185,9 @@ func (pod *Pod) watcher(req *restful.Request, resp *restful.Response) {
 				log.Printf("watch: %s executed on %s with value %s\n", event.Type, string(event.Kv.Key), string(event.Kv.Value))
 
 				if fieldSelector == "" {
-					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
-				} else if validateFieldSelector(fieldSelector, string(event.Kv.Value)) {
-					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
+					fmt.Fprintf(resp, "Type: %s Value: %s\n", event.Type, string(event.Kv.Value))
+					} else if validateFieldSelector(fieldSelector, string(event.Kv.Value)) {
+						fmt.Fprintf(resp, "Type: %s Value: %s\n", event.Type, string(event.Kv.Value))
 				}
 
 				resp.Flush()

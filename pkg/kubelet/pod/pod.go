@@ -11,13 +11,16 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/google/uuid"
+	"github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
 	kubeapi_rest "github.com/jonatan5524/own-kubernetes/pkg/kube-api/rest"
 	kube_containerd "github.com/jonatan5524/own-kubernetes/pkg/kubelet/containerd"
 	kubelet_net "github.com/jonatan5524/own-kubernetes/pkg/kubelet/net"
+	"github.com/jonatan5524/own-kubernetes/pkg/utils"
 )
 
 const (
@@ -29,6 +32,10 @@ const (
 	defaultNetNamespacePath              = "/proc/%d/ns/net"
 	defaultIPCNamespacePath              = "/proc/%d/ns/ipc"
 	podRunningPhase                      = "Running"
+	podFailedPhase                       = "Failed"
+	podPendingPhase                      = "Pending"
+	podUnknownPhase                      = "Unknown"
+	defaultReconcileTimeout              = 30
 )
 
 func UpdatePodStatus(kubeAPIEndpoint string, podName string, namespace string, podStatus kubeapi_rest.PodStatus) error {
@@ -146,35 +153,138 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR strin
 			continue
 		}
 
-		log.Printf("event: %s", line)
+		typeEvent, value, err := utils.GetTypeAndValueFromEvent(line)
+		if err != nil {
+			log.Printf("error getting type and value from event: %v", err)
+
+			continue
+		}
+
+		log.Printf("pod  event for pods: %s %s", typeEvent, value)
 
 		var pod kubeapi_rest.Pod
-		err = yaml.Unmarshal([]byte(line), &pod)
+		err = yaml.Unmarshal([]byte(value), &pod)
 		if err != nil {
 			log.Printf("error parsing pod from event: %v", err)
 
 			continue
 		}
 
-		if pod.Status.Phase == podRunningPhase && strings.Contains(line, kubeapi_rest.LastAppliedConfigurationAnnotationKey) {
-			equal, err := compareLastAppliedToCurrentPod(pod)
-			if err != nil {
-				log.Printf("error comparing last applied: %v", err)
+		if typeEvent == "PUT" {
+			if pod.Status.Phase == podRunningPhase && strings.Contains(line, kubeapi_rest.LastAppliedConfigurationAnnotationKey) {
+				equal, err := compareLastAppliedToCurrentPod(pod)
+				if err != nil {
+					log.Printf("error comparing last applied: %v", err)
 
-				continue
+					continue
+				}
+
+				if equal {
+					log.Printf("Pod is not changed from last applied annotation")
+
+					continue
+				}
+
+				log.Printf("Pod has changed starts creation")
 			}
 
-			if equal {
-				log.Printf("Pod is not changed from last applied annotation")
-
-				continue
+			if pod.Status.Phase == podPendingPhase {
+				go createPod(pod, podCIDR, podBridgeName, kubeAPIEndpoint)
 			}
+		}
+	}
+}
 
-			log.Printf("Pod has changed starts creation")
+func Reconcile(kubeAPIEndpoint string, hostname string) {
+	log.Printf("starting pod reconciliation")
+
+	for {
+		pods, err := getPods(kubeAPIEndpoint, hostname)
+		if err != nil {
+			log.Printf("error getting pods from api %v", err)
+
+			continue
 		}
 
-		go createPod(pod, podCIDR, podBridgeName, kubeAPIEndpoint)
+		for _, pod := range pods {
+			newPhase, err := getStatus(pod)
+			if err != nil {
+				log.Printf("error figuring out pod status %v", err)
+			}
+
+			if newPhase != pod.Status.Phase {
+				pod.Status.Phase = newPhase
+
+				if err := UpdatePodStatus(kubeAPIEndpoint,
+					pod.Metadata.Name,
+					pod.Metadata.Namespace,
+					pod.Status,
+				); err != nil {
+					log.Printf("error updating pod status to api %v", err)
+
+					continue
+				}
+			}
+		}
+
+		time.Sleep(time.Second * defaultReconcileTimeout)
 	}
+}
+
+func getStatus(pod rest.Pod) (string, error) {
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		isRunning, err := kube_containerd.IsContainerRunning(containerStatus.ContainerID)
+		if err != nil {
+			return podUnknownPhase, err
+		}
+
+		if !isRunning {
+			return podFailedPhase, nil
+		}
+	}
+
+	return podRunningPhase, nil
+}
+
+func getPods(kubeAPIEndpoint string, hostname string) ([]rest.Pod, error) {
+	log.Printf("getting all pods from api")
+
+	var pods []kubeapi_rest.Pod
+	resp, err := http.Get(fmt.Sprintf(
+		"%s/pods?fieldSelector=%s",
+		kubeAPIEndpoint,
+		url.QueryEscape(fmt.Sprintf("spec.nodeName=%s", hostname)),
+	),
+	)
+	if err != nil {
+		return pods, fmt.Errorf("error sending request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return pods, fmt.Errorf("error reading response body: %v", err)
+		}
+
+		if strings.Contains(string(body), "key not found") {
+			return pods, nil
+		}
+
+		return pods, fmt.Errorf("request failed with status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return pods, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	err = json.Unmarshal(body, &pods)
+	if err != nil {
+		return pods, fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+
+	return pods, nil
 }
 
 func createPod(pod kubeapi_rest.Pod, podCIDR string, podBridgeName string, kubeAPIEndpoint string) {

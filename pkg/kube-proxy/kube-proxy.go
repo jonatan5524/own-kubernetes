@@ -30,7 +30,7 @@ func Setup() error {
 func Run(kubeAPIEndpoint string, hostname string, podCIDR string) error {
 	log.Println("kube-proxy running")
 
-	go endpoint.ListenForEndpointCreation(kubeAPIEndpoint, hostname)
+	go endpoint.ListenForEndpoint(kubeAPIEndpoint, hostname)
 	go service.ListenForPodRunning(kubeAPIEndpoint, hostname)
 
 	if err := service.ListenForServiceCreation(kubeAPIEndpoint, serviceClusterIPCIDR, podCIDR); err != nil {

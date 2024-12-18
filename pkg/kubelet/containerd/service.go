@@ -235,3 +235,30 @@ func getContainerCurrentTask(containerID string) (containerd.Task, error) {
 
 	return containerRef.Task(ctx, cio.Load)
 }
+
+func IsContainerRunning(containerID string) (bool, error) {
+	log.Printf("checking if %s is running", containerID)
+
+	client, ctx, err := containerdConnection()
+	if err != nil {
+		return false, err
+	}
+	defer client.Close()
+
+	containerRef, err := client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return false, err
+	}
+
+	taskRef, err := containerRef.Task(ctx, cio.NewAttach())
+	if err != nil {
+		return false, err
+	}
+
+	status, err := taskRef.Status(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return status.Status == containerd.Running, nil
+}

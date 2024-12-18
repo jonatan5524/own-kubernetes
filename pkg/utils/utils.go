@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -140,3 +141,29 @@ func HostsFromCIDR(cidr string) ([]string, error) {
 	// remove network address and broadcast address
 	return ips[1 : len(ips)-1], nil
 }
+
+func GetTypeAndValueFromEvent(event string) (string, string, error) {
+	typeRegex := regexp.MustCompile(`Type:\s(\w+)`)
+	eventRegex := regexp.MustCompile(`Value:\s({.*})`)
+
+	typeMatch := typeRegex.FindStringSubmatch(event)
+	var typeValue string
+	if len(typeMatch) > 1 {
+		typeValue = typeMatch[1]
+	} else {
+		return "", "", fmt.Errorf("Type not found")
+	}
+
+	eventMatch := eventRegex.FindStringSubmatch(event)
+	var eventValue string
+	if len(eventMatch) > 1 {
+		eventValue = eventMatch[1]
+	} else if typeValue == "DELETE" {
+		return typeValue, eventValue, nil
+	} else {
+		return "", "", fmt.Errorf("Event not found")
+	}
+
+	return typeValue, eventValue, nil
+}
+

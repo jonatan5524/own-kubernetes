@@ -104,6 +104,11 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.BodyParameter("Endpoint", "a Endpoint resource (JSON)").DataType("rest.Endpoint")))
 
+	// -- DELETE --
+	ws.Route(ws.DELETE("/{namespace}/endpoints/{name}").To(namespace.deleteEndpoint).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.PathParameter("name", "name of the endpoint").DataType("string")))
+
 	restful.Add(ws)
 
 	setupDefaultNamespaces()
@@ -274,13 +279,13 @@ func (namespace *Namespace) watcher(req *restful.Request, resp *restful.Response
 				log.Printf("watch: %s executed on %s with value %s\n", event.Type, string(event.Kv.Key), string(event.Kv.Value))
 
 				if fieldSelector == "" {
-					fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
+					fmt.Fprintf(resp, "Type: %s Value: %s\n", event.Type, string(event.Kv.Value))
 				} else {
 					splitedFieldSelector := strings.Split(fieldSelector, "=")
 					resGJSON := gjson.Get(string(event.Kv.Value), splitedFieldSelector[0])
 
 					if resGJSON.Exists() && resGJSON.Value() == splitedFieldSelector[1] {
-						fmt.Fprintf(resp, "%s\n", string(event.Kv.Value))
+						fmt.Fprintf(resp, "Type: %s Value: %s\n", event.Type, string(event.Kv.Value))
 					}
 				}
 
@@ -369,6 +374,10 @@ func (namespace *Namespace) createPod(req *restful.Request, resp *restful.Respon
 		newPod.Metadata.UID = uuid.NewString()
 	}
 
+	if newPod.Status.Phase == "" {
+		newPod.Status.Phase = "Pending"
+	}
+
 	namespace.createResourceInNamespace(
 		req,
 		resp,
@@ -377,6 +386,26 @@ func (namespace *Namespace) createPod(req *restful.Request, resp *restful.Respon
 		newPod.Metadata.Name,
 		newPod,
 	)
+}
+
+func (namespace *Namespace) deleteResourceInNamespace(req *restful.Request, resp *restful.Response, etcdKey string) {
+	name := req.PathParameter("name")
+	namespaceQuery := req.PathParameter("namespace")
+
+	err := etcdServiceAppNamespace.DeleteResource(fmt.Sprintf("%s/%s/%s", etcdKey, namespaceQuery, name))
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
+		return
+	}
+
+	err = resp.WriteEntity("success")
+	if err != nil {
+		fmt.Printf("error while sending error: %v", err)
+	}
 }
 
 func (namespace *Namespace) updateStatus(req *restful.Request, resp *restful.Response) {
@@ -602,4 +631,8 @@ func (namespace *Namespace) getEndpoints(req *restful.Request, resp *restful.Res
 
 func (namespace *Namespace) getEndpoint(req *restful.Request, resp *restful.Response) {
 	namespace.getSingleResourceInNamespace(req, resp, endpointEtcdKey)
+}
+
+func (namespace *Namespace) deleteEndpoint(req *restful.Request, resp *restful.Response) {
+	namespace.deleteResourceInNamespace(req, resp, endpointEtcdKey)
 }

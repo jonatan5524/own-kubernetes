@@ -130,29 +130,33 @@ func NewClusterIPService(clusterIP string, podCIDR string, namespace string, ser
 	return nil
 }
 
-func AddEndpointToServiceChain(namespace string, serviceName string, podName string, portName string, podIP string, podPort int, probability float32) error {
-	serviceNameChain := fmt.Sprintf("%s-%s", clusterIPServicePrefix, chainHashPrefix(serviceName, namespace, portName))
-	serviceEndpointChain := fmt.Sprintf("%s-%s", serviceEndpointPrefix, chainHashPrefix(podName, namespace, portName))
+func ClearClusterIPServiceFromEndpoints(serviceName string, namespace string, portName string) error {
+	id := chainHashPrefix(serviceName, namespace, portName)
+	serviceNameChain := fmt.Sprintf("%s-%s", clusterIPServicePrefix, id)
 
-	// iptables -t nat -N KUBE-SVC-id
-	if err := newIPTablesChain(serviceEndpointChain); err != nil {
+	// iptables -t nat -D KUBE-SVC-id 2
+	if err := deleteIPTablesRule(
+		netTable,
+		serviceNameChain,
+		2,
+	); err != nil {
 		return err
 	}
 
-	// iptables -A KUBE-SVC-id -m comment --comment "namespace/serviceName->podIP:podPort" -m statistic --mode random --probability probability -j KUBE-SEP-id
-	rule := ""
-	if probability != 0 {
-		rule = fmt.Sprintf("-m statistic --mode random --probability %f -j %s", probability, serviceEndpointChain)
-	} else {
-		rule = fmt.Sprintf("-j %s", serviceEndpointChain)
-	}
-	if err := insertNewIPTablesRule(
-		netTable,
-		rule,
-		serviceNameChain,
-		2,
-		fmt.Sprintf("%s/%s->%s:%d", namespace, serviceName, podIP, podPort),
-	); err != nil {
+	return nil
+}
+
+func DeleteServiceEndpoint(podName string, namespace string, portName string) error {
+	serviceEndpointChain := fmt.Sprintf("%s-%s", serviceEndpointPrefix, chainHashPrefix(podName, namespace, portName))
+
+	return deleteIPTablesChain(netTable, serviceEndpointChain)
+}
+
+func CreateEndpointChain(namespace string, serviceName string, podName string, portName string, podIP string, podPort int) error {
+	serviceEndpointChain := fmt.Sprintf("%s-%s", serviceEndpointPrefix, chainHashPrefix(podName, namespace, portName))
+
+	// iptables -t nat -N KUBE-SEP-id
+	if err := newIPTablesChain(serviceEndpointChain); err != nil {
 		return err
 	}
 
@@ -172,6 +176,30 @@ func AddEndpointToServiceChain(namespace string, serviceName string, podName str
 		fmt.Sprintf("-p tcp -m tcp -j DNAT --to-destination %s:%d", podIP, podPort),
 		serviceEndpointChain,
 		fmt.Sprintf("%s/%s:%s-clusterIP", namespace, serviceName, portName),
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func AddEndpointToServiceChain(namespace string, serviceName string, podName string, portName string, podIP string, podPort int, probability float32) error {
+	serviceNameChain := fmt.Sprintf("%s-%s", clusterIPServicePrefix, chainHashPrefix(serviceName, namespace, portName))
+	serviceEndpointChain := fmt.Sprintf("%s-%s", serviceEndpointPrefix, chainHashPrefix(podName, namespace, portName))
+
+	// iptables -A KUBE-SVC-id -m comment --comment "namespace/serviceName->podIP:podPort" -m statistic --mode random --probability probability -j KUBE-SEP-id
+	rule := ""
+	if probability != 0 {
+		rule = fmt.Sprintf("-m statistic --mode random --probability %f -j %s", probability, serviceEndpointChain)
+	} else {
+		rule = fmt.Sprintf("-j %s", serviceEndpointChain)
+	}
+	if err := insertNewIPTablesRule(
+		netTable,
+		rule,
+		serviceNameChain,
+		2,
+		fmt.Sprintf("%s/%s->%s:%d", namespace, serviceName, podIP, podPort),
 	); err != nil {
 		return err
 	}
@@ -331,6 +359,35 @@ func insertNewIPTablesRule(table string, rule string, chain string, index int, c
 			index,
 			comment,
 			rule,
+		),
+	)
+}
+
+func deleteIPTablesRule(table string, chain string, index int) error {
+	return utils.ExecuteCommand(
+		fmt.Sprintf("/usr/sbin/iptables -t %s -D %s %d",
+			table,
+			chain,
+			index,
+		),
+	)
+}
+
+func deleteIPTablesChain(table string, chain string) error {
+	err := utils.ExecuteCommand(
+		fmt.Sprintf("/usr/sbin/iptables -t %s -F %s",
+			table,
+			chain,
+		),
+	)
+	if err != nil {
+		return err
+	}
+
+	return utils.ExecuteCommand(
+		fmt.Sprintf("/usr/sbin/iptables -t %s -X %s",
+			table,
+			chain,
 		),
 	)
 }
