@@ -20,7 +20,6 @@ const (
 func CreateNodePort(namespace string, serviceName string, portName string, kubeAPIEndpoint string) (int, error) {
 	log.Printf("creating iptables nodeport")
 
-	// TODO: not working
 	port, err := getNextAvailableNodePort(kubeAPIEndpoint)
 	if err != nil {
 		return 0, err
@@ -41,7 +40,6 @@ func CheckIfNodePortServiceExists(namespace string, name string, portName string
 	return iptables.CheckIfNodePortServiceExists(namespace, name, portName)
 }
 
-// TODO: update node port to api
 func getNextAvailableNodePort(kubeAPIEndpoint string) (int, error) {
 	log.Printf("getting available node port")
 

@@ -146,7 +146,6 @@ func createEndpointIPTable(kubeAPIEndpoint string, endpoint kubeapi_rest.Endpoin
 	}
 }
 
-// TODO: don't need to delete the endpoint when pod is failed but need to remove the address...
 func DeleteEndpointAddressIfExists(pod kubeapi_rest.Pod, kubeAPIEndpoint string) {
 	log.Printf("check if endpoint for pod %s/%s need to delete", pod.Metadata.Namespace, pod.Metadata.Name)
 

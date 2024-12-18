@@ -147,7 +147,6 @@ func ListenForPodRunning(kubeAPIEndpoint string, hostname string) error {
 				go endpoint.DeleteEndpointAddressIfExists(pod, kubeAPIEndpoint)
 			}
 		}
-		// TODO: check if not running and if created than delete endpoint
 	}
 }
 
