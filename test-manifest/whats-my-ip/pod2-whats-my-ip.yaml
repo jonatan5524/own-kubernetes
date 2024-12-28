@@ -1,0 +1,13 @@
+kind: Pod
+metadata:
+  name: whats-my-ip2
+  namespace: test
+  labels:
+    app: whatsmyip
+spec:
+  containers:
+    - name: whats-my-ip
+      image: docker.io/cloudnativelabs/whats-my-ip:latest
+      ports:
+        - containerPort: 8080
+  nodeName: worker

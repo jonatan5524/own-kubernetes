@@ -1,12 +1,22 @@
-# Dockerfile for node image
-FROM ubuntu
+FROM golang:1.22-alpine AS builder
 
-WORKDIR /agent
+ARG target
+ARG dir
 
-RUN apt-get update && apt-get install -y wget containerd iproute2 iptables iputils-ping
+WORKDIR /build
 
-COPY bin/agent .
+COPY go.mod go.sum ./
+RUN go mod download
 
-EXPOSE 10250
+COPY . .
 
-ENTRYPOINT [ "./agent" ]
+RUN go build -o $target ./$dir
+
+FROM scratch
+
+ARG target
+
+COPY --from=builder "/build/$target" "/"
+
+ENV TARGET_SH=$target
+ENTRYPOINT ["/$TARGET_SH"]

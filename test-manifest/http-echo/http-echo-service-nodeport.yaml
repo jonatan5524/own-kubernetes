@@ -1,0 +1,12 @@
+kind: Service
+metadata:
+  name: echoserver-nodeport
+  namespace: test
+spec:
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+  type: NodePort
+  selector:
+    app: echoserver

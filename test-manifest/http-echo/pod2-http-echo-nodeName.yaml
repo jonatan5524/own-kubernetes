@@ -1,0 +1,16 @@
+kind: Pod
+metadata:
+  name: echo-server2
+  namespace: test
+  labels:
+    app: echoserver
+spec:
+  containers:
+    - name: echo-server
+      image: docker.io/mendhak/http-https-echo:34
+      ports:
+        - containerPort: 3000
+      env:
+        - name: HTTP_PORT
+          value: "3000"
+  nodeName: worker
