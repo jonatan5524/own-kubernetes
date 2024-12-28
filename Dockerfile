@@ -12,11 +12,11 @@ COPY . .
 
 RUN go build -o $target ./$dir
 
-FROM alpine:3.20.2
+FROM scratch
 
 ARG target
 
-COPY --from=builder "/build/$target" "./"
+COPY --from=builder "/build/$target" "/"
 
 ENV TARGET_SH=$target
-ENTRYPOINT "./$TARGET_SH"
+ENTRYPOINT ["/$TARGET_SH"]

@@ -123,3 +123,13 @@ func getAllServices(kubeAPIEndpoint string) ([]kubeapi_rest.Service, error) {
 
 	return services, nil
 }
+
+func DeleteClusterIPService(serviceName string, namespace string, portName string) error {
+	log.Printf("deleting iptables clusterIP")
+
+	if err := iptables.DeleteServiceClusterIP(serviceName, namespace, portName); err != nil {
+		return err
+	}
+
+	return nil
+}

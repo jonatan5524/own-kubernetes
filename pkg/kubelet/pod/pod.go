@@ -28,14 +28,16 @@ const (
 	defaultPodResolvConfLocation         = "/home/user/kubernetes/kubelet/pod/%s/resolv.conf"
 	defaultPodContainerHostnameLocation  = "/home/user/kubernetes/kubelet/pod/%s/%s/hostname"
 	defaultPodContainerEtcdHostsLocation = "/home/user/kubernetes/kubelet/pod/%s/etc-hosts"
-	defaultPauseContainerImage           = "docker.io/jonatan5524/own-kubernetes:pause"
-	defaultNetNamespacePath              = "/proc/%d/ns/net"
-	defaultIPCNamespacePath              = "/proc/%d/ns/ipc"
-	podRunningPhase                      = "Running"
-	podFailedPhase                       = "Failed"
-	podPendingPhase                      = "Pending"
-	podUnknownPhase                      = "Unknown"
-	defaultReconcileTimeout              = 30
+	// defaultPauseContainerImage           = "docker.io/jonatan5524/own-kubernetes:pause"
+	defaultPauseContainerImage = "registry.k8s.io/pause:3.9"
+	defaultNetNamespacePath    = "/proc/%d/ns/net"
+	defaultIPCNamespacePath    = "/proc/%d/ns/ipc"
+	podRunningPhase            = "Running"
+	podFailedPhase             = "Failed"
+	podPendingPhase            = "Pending"
+	podTerminatingPhase        = "Terminating"
+	podUnknownPhase            = "Unknown"
+	defaultReconcileTimeout    = 30
 )
 
 func UpdatePodStatus(kubeAPIEndpoint string, podName string, namespace string, podStatus kubeapi_rest.PodStatus) error {
@@ -61,6 +63,37 @@ func UpdatePodStatus(kubeAPIEndpoint string, podName string, namespace string, p
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("error sending pod status update: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error reading response body: %v", err)
+		}
+
+		return fmt.Errorf("request failed with status code: %d %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func deletePodAPI(kubeAPIEndpoint string, namespace string, name string) error {
+	log.Printf("delete pod %s for api", name)
+
+	req, err := http.NewRequest(
+		http.MethodDelete,
+		fmt.Sprintf("%s/namespaces/%s/pods/%s", kubeAPIEndpoint, namespace, name),
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		return fmt.Errorf("error creating request for pod delete: %v", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error sending pod delete: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -114,7 +147,7 @@ func UpdatePod(kubeAPIEndpoint string, pod kubeapi_rest.Pod) error {
 	return nil
 }
 
-func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR string, podBridgeName string) error {
+func ListenForPod(kubeAPIEndpoint string, hostname string, podCIDR string, podBridgeName string) error {
 	log.Printf("started watch on pod from kube API")
 
 	resp, err := http.Get(fmt.Sprintf(
@@ -190,6 +223,8 @@ func ListenForPodCreation(kubeAPIEndpoint string, hostname string, podCIDR strin
 
 			if pod.Status.Phase == podPendingPhase {
 				go createPod(pod, podCIDR, podBridgeName, kubeAPIEndpoint)
+			} else if pod.Status.Phase == podTerminatingPhase {
+				go deletePod(pod, kubeAPIEndpoint)
 			}
 		}
 	}
@@ -212,7 +247,7 @@ func Reconcile(kubeAPIEndpoint string, hostname string) {
 				log.Printf("error figuring out pod status %v", err)
 			}
 
-			if newPhase != pod.Status.Phase {
+			if pod.Status.Phase != podTerminatingPhase && newPhase != pod.Status.Phase {
 				pod.Status.Phase = newPhase
 
 				if err := UpdatePodStatus(kubeAPIEndpoint,
@@ -285,6 +320,31 @@ func getPods(kubeAPIEndpoint string, hostname string) ([]rest.Pod, error) {
 	}
 
 	return pods, nil
+}
+
+func deletePod(pod kubeapi_rest.Pod, kubeAPIEndpoint string) {
+	log.Printf("started deleting pod %s/%s", pod.Metadata.Namespace, pod.Metadata.Name)
+
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if err := kube_containerd.DeleteContainer(containerStatus.ContainerID); err != nil {
+			log.Printf("error deleting container %v", err)
+
+			return
+		}
+
+		// Pause container
+		if err := kube_containerd.DeleteContainer(pod.Metadata.UID); err != nil {
+			log.Printf("error deleting container %v", err)
+
+			return
+		}
+	}
+
+	if err := deletePodAPI(kubeAPIEndpoint, pod.Metadata.Namespace, pod.Metadata.Name); err != nil {
+		log.Printf("error sending delete pod to api %v", err)
+
+		return
+	}
 }
 
 func createPod(pod kubeapi_rest.Pod, podCIDR string, podBridgeName string, kubeAPIEndpoint string) {

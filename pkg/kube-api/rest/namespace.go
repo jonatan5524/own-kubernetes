@@ -109,6 +109,14 @@ func (namespace *Namespace) Register(etcdServersEndpoints string) {
 		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
 		Param(ws.PathParameter("name", "name of the endpoint").DataType("string")))
 
+	ws.Route(ws.DELETE("/{namespace}/services/{name}").To(namespace.deleteService).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.PathParameter("name", "name of the service").DataType("string")))
+
+	ws.Route(ws.DELETE("/{namespace}/pods/{name}").To(namespace.deletePod).Filter(validateNamespaceExists).
+		Param(ws.PathParameter("namespace", "namespace").DataType("string")).
+		Param(ws.PathParameter("name", "name of the pod").DataType("string")))
+
 	restful.Add(ws)
 
 	setupDefaultNamespaces()
@@ -635,4 +643,48 @@ func (namespace *Namespace) getEndpoint(req *restful.Request, resp *restful.Resp
 
 func (namespace *Namespace) deleteEndpoint(req *restful.Request, resp *restful.Response) {
 	namespace.deleteResourceInNamespace(req, resp, endpointEtcdKey)
+}
+
+// TODO: add handler in kubelet
+func (namespace *Namespace) deleteService(req *restful.Request, resp *restful.Response) {
+	namespace.deleteResourceInNamespace(req, resp, serviceEtcdKey)
+}
+
+func (namespace *Namespace) deletePod(req *restful.Request, resp *restful.Response) {
+	name := req.PathParameter("name")
+	namespaceQuery := req.PathParameter("namespace")
+
+	res, err := etcdServiceAppNamespace.GetResource(fmt.Sprintf("%s/%s/%s", podEtcdKey, namespaceQuery, name))
+	if err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
+		return
+	}
+
+	var newPod Pod
+	if err = json.Unmarshal(res, &newPod); err != nil {
+		err = resp.WriteError(http.StatusBadRequest, err)
+		if err != nil {
+			fmt.Printf("error while sending error: %v", err)
+		}
+
+		return
+	}
+
+	if newPod.Status.Phase == "Terminating" {
+		namespace.deleteResourceInNamespace(req, resp, podEtcdKey)
+	} else {
+		newPod.Status.Phase = "Terminating"
+		namespace.createResourceInNamespace(
+			req,
+			resp,
+			podEtcdKey,
+			newPod.Metadata.Namespace,
+			newPod.Metadata.Name,
+			newPod,
+		)
+	}
 }

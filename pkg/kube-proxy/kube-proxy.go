@@ -33,7 +33,7 @@ func Run(kubeAPIEndpoint string, hostname string, podCIDR string) error {
 	go endpoint.ListenForEndpoint(kubeAPIEndpoint, hostname)
 	go service.ListenForPodRunning(kubeAPIEndpoint, hostname)
 
-	if err := service.ListenForServiceCreation(kubeAPIEndpoint, serviceClusterIPCIDR, podCIDR); err != nil {
+	if err := service.ListenForService(kubeAPIEndpoint, serviceClusterIPCIDR, podCIDR); err != nil {
 		return fmt.Errorf("%v", err)
 	}
 

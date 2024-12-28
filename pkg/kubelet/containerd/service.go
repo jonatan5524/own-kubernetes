@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"syscall"
+	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -43,6 +45,68 @@ func containerdConnection() (*containerd.Client, context.Context, error) {
 	ctx := namespaces.WithNamespace(context.Background(), defaultNamespace)
 
 	return client, ctx, nil
+}
+
+func DeleteContainer(containerID string) error {
+	log.Printf("deleting container %s", containerID)
+
+	client, ctx, err := containerdConnection()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	containerRef, err := client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return err
+	}
+
+	task, err := containerRef.Task(ctx, cio.Load)
+	if err != nil {
+		return err
+	}
+
+	exitStatusC, err := task.Wait(ctx)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("stopping container task %s with SIGTERM", task.ID())
+	if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
+		return err
+	}
+
+	select {
+	case status := <-exitStatusC:
+		code, _, err := status.Result()
+		if err != nil {
+			return err
+		}
+
+		if code != 0 {
+			log.Printf("killing container task %s with SIGKILL", task.ID())
+			if err := task.Kill(ctx, syscall.SIGKILL); err != nil {
+				return err
+			}
+		}
+	case <-time.After(time.Second * 5):
+		log.Printf("timeout for SIGTERM task %s trying SIGKILL", task.ID())
+		if err := task.Kill(ctx, syscall.SIGKILL); err != nil {
+			return err
+		}
+	}
+
+	log.Printf("deleting current container process")
+	if _, err := task.Delete(ctx); err != nil {
+		return err
+	}
+
+	log.Printf("deleting container")
+	if err := client.ContainerService().Delete(ctx, containerID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func CreateContainer(

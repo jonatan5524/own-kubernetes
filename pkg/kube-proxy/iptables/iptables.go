@@ -97,6 +97,13 @@ func NewNodePortService(namespace string, serviceName string, port int, portName
 	return nil
 }
 
+func DeleteServiceClusterIP(serviceName string, namespace string, portName string) error {
+	id := chainHashPrefix(serviceName, namespace, portName)
+	serviceNameChain := fmt.Sprintf("%s-%s", clusterIPServicePrefix, id)
+
+	return deleteIPTablesChain(netTable, serviceNameChain)
+}
+
 func NewClusterIPService(clusterIP string, podCIDR string, namespace string, serviceName string, servicePort int, portName string) error {
 	id := chainHashPrefix(serviceName, namespace, portName)
 	serviceNameChain := fmt.Sprintf("%s-%s", clusterIPServicePrefix, id)
@@ -147,6 +154,12 @@ func ClearClusterIPServiceFromEndpoints(serviceName string, namespace string, po
 }
 
 func DeleteServiceEndpoint(podName string, namespace string, portName string) error {
+	serviceEndpointChain := fmt.Sprintf("%s-%s", serviceEndpointPrefix, chainHashPrefix(podName, namespace, portName))
+
+	return deleteIPTablesChain(netTable, serviceEndpointChain)
+}
+
+func DeleteEndpointChain(podName string, namespace string, portName string) error {
 	serviceEndpointChain := fmt.Sprintf("%s-%s", serviceEndpointPrefix, chainHashPrefix(podName, namespace, portName))
 
 	return deleteIPTablesChain(netTable, serviceEndpointChain)

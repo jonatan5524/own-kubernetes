@@ -6,4 +6,10 @@ COPY . .
 
 RUN gcc -o pause pause.c
 
-ENTRYPOINT "./pause"
+FROM scratch
+
+COPY --from=builder /build/pause /pause
+
+USER 65535:65535
+
+ENTRYPOINT ["/pause"]

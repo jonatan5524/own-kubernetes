@@ -91,6 +91,28 @@ func ListenForEndpoint(kubeAPIEndpoint string, hostname string) error {
 			if found {
 				go createEndpointIPTable(kubeAPIEndpoint, endpoint)
 			}
+		} else {
+			go deleteEndpoint(endpoint)
+		}
+	}
+}
+
+func deleteEndpoint(endpoint kubeapi_rest.Endpoint) {
+	log.Printf("deleteing endpoint %s/%s", endpoint.Metadata.Namespace, endpoint.Metadata.Name)
+
+	for _, subset := range endpoint.Subsets {
+		for _, address := range subset.Addresses {
+			for _, port := range subset.Ports {
+				if err := iptables.DeleteEndpointChain(
+					address.TargetRef.Name,
+					endpoint.Metadata.Namespace,
+					port.Name,
+				); err != nil {
+					log.Printf("error deleting endpoint: %v", err)
+
+					return
+				}
+			}
 		}
 	}
 }

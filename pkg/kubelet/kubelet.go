@@ -98,7 +98,7 @@ func (app *KubeletApp) Run() error {
 
 	go pod.Reconcile(app.kubeAPIEndpoint, app.hostname)
 
-	if err := pod.ListenForPodCreation(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {
+	if err := pod.ListenForPod(app.kubeAPIEndpoint, app.hostname, podCIDR, podBridgeName); err != nil {
 		return fmt.Errorf("%v", err)
 	}
 

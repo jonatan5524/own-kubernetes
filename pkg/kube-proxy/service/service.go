@@ -19,7 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func ListenForServiceCreation(kubeAPIEndpoint string, clusterIPCIDR string, podCIDR string) error {
+func ListenForService(kubeAPIEndpoint string, clusterIPCIDR string, podCIDR string) error {
 	log.Printf("started watch on services from kube API")
 
 	resp, err := http.Get(fmt.Sprintf(
@@ -75,11 +75,9 @@ func ListenForServiceCreation(kubeAPIEndpoint string, clusterIPCIDR string, podC
 		}
 
 		if typeEvent == "PUT" {
-			for _, port := range service.Spec.Ports {
-				if !clusterip.CheckIfClusterIPServiceExists(service.Metadata.Namespace, service.Metadata.Name, port.Name) {
-					go createService(kubeAPIEndpoint, service, clusterIPCIDR, podCIDR)
-				}
-			}
+			go createService(kubeAPIEndpoint, service, clusterIPCIDR, podCIDR)
+		} else {
+			go deleteService(service)
 		}
 	}
 }
@@ -146,6 +144,8 @@ func ListenForPodRunning(kubeAPIEndpoint string, hostname string) error {
 			} else {
 				go endpoint.DeleteEndpointAddressIfExists(pod, kubeAPIEndpoint)
 			}
+		} else {
+			go endpoint.DeleteEndpointAddressIfExists(pod, kubeAPIEndpoint)
 		}
 	}
 }
@@ -170,6 +170,22 @@ func conditionalCreateEndpoints(pod kubeapi_rest.Pod, kubeAPIEndpoint string) {
 	}
 }
 
+func deleteService(service kubeapi_rest.Service) {
+	log.Printf("deleteing service %s/%s", service.Metadata.Namespace, service.Metadata.Name)
+
+	for _, port := range service.Spec.Ports {
+		if err := clusterip.DeleteClusterIPService(
+			service.Metadata.Name,
+			service.Metadata.Namespace,
+			port.Name,
+		); err != nil {
+			log.Printf("error deleting service: %v", err)
+
+			return
+		}
+	}
+}
+
 func createService(kubeAPIEndpoint string, service kubeapi_rest.Service, clusterIPCIDR string, podCIDR string) {
 	log.Printf("creating service %s/%s", service.Metadata.Namespace, service.Metadata.Name)
 
@@ -181,9 +197,10 @@ func createService(kubeAPIEndpoint string, service kubeapi_rest.Service, cluster
 		return
 	}
 
+	updated := false
 	for index, port := range service.Spec.Ports {
 		if !clusterip.CheckIfClusterIPServiceExists(service.Metadata.Namespace, service.Metadata.Name, port.Name) {
-
+			updated = true
 			if service.Spec.ClusterIP == "" {
 				var clusterIP string
 				clusterIP, err = clusterip.CreateNewClusterIP(
@@ -235,17 +252,19 @@ func createService(kubeAPIEndpoint string, service kubeapi_rest.Service, cluster
 		}
 	}
 
-	if err := updateService(kubeAPIEndpoint, service); err != nil {
-		log.Printf("error sending service update to api: %v", err)
+	if updated {
+		if err := updateService(kubeAPIEndpoint, service); err != nil {
+			log.Printf("error sending service update to api: %v", err)
 
-		return
+			return
+		}
+		
+		log.Printf("Service created")
+		
+		endpoint.CreateEndpoints(kubeAPIEndpoint, service, pods)
+		
+		log.Printf("Service %s is created ", service.Metadata.UID)
 	}
-
-	log.Printf("Service created")
-
-	endpoint.CreateEndpoints(kubeAPIEndpoint, service, pods)
-
-	log.Printf("Service %s is created ", service.Metadata.UID)
 }
 
 func getSelectorKeyAndValue(selector map[string]string) (string, string) {
