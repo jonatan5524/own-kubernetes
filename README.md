@@ -31,3 +31,8 @@ To interact with the kube-api (in local machine):
 export KUBE_API_ENDPOINT=http://${NODE_IP}:8080
 ./bin/own-kubectl get pods
 ```
+
+## Supported functionality:
+- Create a Namespace
+- Create and delete pods using YAML
+- Create and delete services (clusterIP and NodePort) associated with those pods (endpoints are created under the hood)
